@@ -43,3 +43,9 @@ Each event: `event: <name>\ndata: <json>\n\n`
 - `token`: `{text}` — incremental answer text (Markdown; cites sources inline as `[p. 4]`)
 - `done`: `{}`
 - `error`: `{detail}`
+
+## Additive extras (backend, optional for the frontend)
+- `sources` also carries `query`: the standalone question actually used for retrieval (follow-ups get rewritten using `history`), e.g. to show "Interpreted as: …".
+- `GET /api/papers/{id}/export.md` → the summary as a Markdown file (`text/markdown`, `Content-Disposition: attachment`); `409` if the summary isn't ready.
+- `POST /api/papers/{id}/chat` returns `409 {detail}` if the paper hasn't been indexed yet (only possible in the first seconds after upload).
+- Chunk `id` format is `"{paper_id}:{index}"`; `score` is the fused retrieval score normalised to 0–1 (top hit = 1).
