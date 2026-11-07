@@ -40,6 +40,7 @@ export function summaryToMarkdown(paper: Paper, s: Summary): string {
     `# ${s.title || paper.filename}`,
     '',
     s.authors?.length ? `**Authors:** ${s.authors.join(', ')}` : '',
+    '',
     s.keywords?.length ? `**Keywords:** ${s.keywords.join(' · ')}` : '',
     '',
     '## Abstract',

@@ -4,6 +4,19 @@ function esc(s: string) {
   return s.replace(/[\\()]/g, (c) => '\\' + c)
 }
 
+function wrap(text: string, width: number): string[] {
+  const lines: string[] = []
+  let cur = ''
+  for (const word of text.split(' ')) {
+    if (cur && (cur + ' ' + word).length > width) {
+      lines.push(cur)
+      cur = word
+    } else cur = cur ? `${cur} ${word}` : word
+  }
+  if (cur) lines.push(cur)
+  return lines
+}
+
 export interface SamplePage {
   heading: string
   lines: string[]
@@ -25,8 +38,11 @@ export function buildSamplePdf(title: string, pages: SamplePage[]): Blob {
     const ops: string[] = []
     let y = 730
     if (i === 0) {
-      ops.push(`BT /F2 17 Tf 72 ${y} Td (${esc(title)}) Tj ET`)
-      y -= 44
+      for (const line of wrap(title, 52)) {
+        ops.push(`BT /F2 17 Tf 72 ${y} Td (${esc(line)}) Tj ET`)
+        y -= 22
+      }
+      y -= 22
     }
     ops.push('BT', `/F2 14 Tf 72 ${y} Td (${esc(p.heading)}) Tj`, '/F1 11 Tf 0 -26 Td 16 TL')
     for (const line of p.lines) ops.push(`(${esc(line)}) Tj T*`)

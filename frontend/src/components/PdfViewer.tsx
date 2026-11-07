@@ -79,6 +79,14 @@ export function PdfViewer({ url, filename, jump }: Props) {
       if (!el || !root) return
       setVisible((v) => new Set([...v, p - 1, p, p + 1]))
       root.scrollTo({ top: el.offsetTop - 12, behavior: 'smooth' })
+      // Page sizes can still change right after a jump (lazy renders, a just-shown pane resizing),
+      // so correct the position once things settle.
+      for (const ms of [450, 900]) {
+        setTimeout(() => {
+          const target = el.offsetTop - 12
+          if (Math.abs(root.scrollTop - target) > 8) root.scrollTo({ top: target })
+        }, ms)
+      }
       if (highlight) {
         setFlash(null)
         requestAnimationFrame(() => setFlash(p))
@@ -120,7 +128,7 @@ export function PdfViewer({ url, filename, jump }: Props) {
         >
           <ChevronDown className="size-4" />
         </button>
-        <span className="px-1 font-mono text-xs tabular-nums text-ink-muted" aria-live="polite">
+        <span className="whitespace-nowrap px-1 font-mono text-xs tabular-nums text-ink-muted" aria-live="polite">
           {numPages ? `${current} / ${numPages}` : '–'}
         </span>
         <div className="mx-1 h-5 w-px bg-line-muted" />
@@ -147,13 +155,18 @@ export function PdfViewer({ url, filename, jump }: Props) {
         >
           <Plus className="size-4" />
         </button>
-        <button className={btn} onClick={() => setZoom(1)} aria-label="Fit to width" title="Fit to width">
+        <button
+          className={`${btn} max-sm:hidden`}
+          onClick={() => setZoom(1)}
+          aria-label="Fit to width"
+          title="Fit to width"
+        >
           <ScanLine className="size-4" />
         </button>
-        <span className="ml-auto truncate px-2 text-xs text-ink-muted" title={filename}>
+        <span className="ml-auto truncate px-2 text-xs text-ink-muted max-sm:hidden" title={filename}>
           {filename}
         </span>
-        <a className={btn} href={url} download={filename} aria-label="Download PDF" title="Download PDF">
+        <a className={`${btn} max-sm:ml-auto`} href={url} download={filename} aria-label="Download PDF" title="Download PDF">
           <Download className="size-4" />
         </a>
       </div>
@@ -191,7 +204,7 @@ export function PdfViewer({ url, filename, jump }: Props) {
                     pageRefs.current[i] = el
                   }}
                   data-page={n}
-                  className={`relative rounded-sm bg-white shadow-md ring-1 ring-black/5 ${flash === n ? 'page-flash' : ''}`}
+                  className={`pdf-page relative rounded-sm bg-white shadow-md ring-1 ring-black/5 ${flash === n ? 'page-flash' : ''}`}
                   style={{ width: pageWidth, minHeight: Math.round(pageWidth * ratio) }}
                 >
                   {visible.has(n) ? (

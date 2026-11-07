@@ -50,8 +50,13 @@ export function Header({ theme, onToggleTheme, onToggleLibrary, onHome }: Props)
           title={down ? 'Backend unreachable' : health ? `LLM provider: ${health.llm_provider}` : 'Checking backend'}
         >
           <span className={`size-1.5 rounded-full ${down ? 'bg-danger' : health ? 'bg-success' : 'bg-warning'}`} />
-          {down ? 'offline' : health ? `${health.llm_provider} · ${health.model}` : 'connecting'}
-          {IS_MOCK && !down && <span className="text-primary">(mock)</span>}
+          {IS_MOCK
+            ? 'demo · in-browser mock'
+            : down
+              ? 'backend offline'
+              : health
+                ? `${health.llm_provider} · ${health.model}`
+                : 'connecting'}
         </span>
         <button
           onClick={onToggleTheme}

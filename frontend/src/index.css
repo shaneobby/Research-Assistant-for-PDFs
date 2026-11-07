@@ -111,6 +111,24 @@ body {
   --tw-prose-td-borders: var(--border-muted);
 }
 
+.prose-paper :where(code):not(:where(pre *))::before,
+.prose-paper :where(code):not(:where(pre *))::after {
+  content: none;
+}
+.prose-paper :where(code):not(:where(pre *)) {
+  background: var(--bg-dark);
+  border: 1px solid var(--border-muted);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+  font-weight: 500;
+  font-size: 0.85em;
+}
+
+/* Soften white PDF pages in dark mode. */
+.dark .pdf-page canvas {
+  filter: brightness(0.9) sepia(0.08);
+}
+
 /* Thin, warm scrollbars. */
 * {
   scrollbar-width: thin;
@@ -182,6 +200,10 @@ body {
   }
   .print-only {
     display: block !important;
+  }
+  .print-only code::before,
+  .print-only code::after {
+    content: none;
   }
 }
 .print-only {
