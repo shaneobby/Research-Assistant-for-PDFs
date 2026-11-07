@@ -122,6 +122,8 @@ The header pill in the UI shows which provider and model are active. Details: [b
 
 ## Architecture
 
+More diagrams (repo structure, local runtime, deployment options): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```mermaid
 flowchart LR
   subgraph Ingest
@@ -182,7 +184,7 @@ no network or key.
 ```
 backend/    FastAPI app (app/), pytest suite (tests/), Dockerfile
 frontend/   Vite React app (src/), Dockerfile + nginx.conf
-docs/       API_CONTRACT.md, screenshots/
+docs/       API_CONTRACT.md, ARCHITECTURE.md, screenshots/
 scripts/    dev.ps1 (Windows) and dev.sh (macOS/Linux) one-command start
 docker-compose.yml
 ```
