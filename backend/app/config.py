@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     chunk_tokens: int = 800
     chunk_overlap_tokens: int = 120
     top_k: int = 6
+    # Summary pipeline sizing (lower both on small-quota providers, e.g. Groq free tier: 4000 / 3000)
+    summary_single_pass_tokens: int = 24_000
+    summary_map_group_tokens: int = 6_000
 
     @property
     def model(self) -> str:

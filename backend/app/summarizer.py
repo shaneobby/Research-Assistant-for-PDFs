@@ -74,10 +74,10 @@ def extract_json(text: str) -> dict:
     return json.loads(raw)
 
 
-def _map_notes(provider: LLMProvider, chunks: list[Chunk]) -> str:
+def _map_notes(provider: LLMProvider, chunks: list[Chunk], group_tokens: int = MAP_GROUP_TOKENS) -> str:
     groups: list[list[Chunk]] = [[]]
     for ch in chunks:
-        if groups[-1] and sum(_tokens(c.text) for c in groups[-1]) + _tokens(ch.text) > MAP_GROUP_TOKENS:
+        if groups[-1] and sum(_tokens(c.text) for c in groups[-1]) + _tokens(ch.text) > group_tokens:
             groups.append([])
         groups[-1].append(ch)
     notes = []
@@ -107,14 +107,16 @@ def generate_summary(
     chunks: list[Chunk],
     page_lookup: Callable[[str], list[int]] | None = None,
     title_hint: str = "",
+    single_pass_tokens: int = SINGLE_PASS_TOKENS,
+    map_group_tokens: int = MAP_GROUP_TOKENS,
 ) -> dict:
     full = _page_tagged(pages)
     n_pages = len(pages)
-    if _tokens(full) <= SINGLE_PASS_TOKENS:
+    if _tokens(full) <= single_pass_tokens:
         material = "Full paper text (page-tagged):\n\n" + full
     else:
         front = _page_tagged(pages[:2])[:FRONT_MATTER_CHARS]
-        notes = _map_notes(provider, chunks)
+        notes = _map_notes(provider, chunks, map_group_tokens)
         material = (
             f"FRONT MATTER (first pages; use for title, authors, abstract):\n{front}\n\n"
             f"SECTION OUTLINE:\n{section_outline(pages)}\n\n"

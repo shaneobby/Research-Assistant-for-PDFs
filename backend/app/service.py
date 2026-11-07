@@ -58,6 +58,8 @@ class PaperService:
                 chunks,
                 page_lookup=lambda t: self._pages_for(paper_id, t),
                 title_hint=title_hint,
+                single_pass_tokens=self.settings.summary_single_pass_tokens,
+                map_group_tokens=self.settings.summary_map_group_tokens,
             )
             if self.store.get_paper(paper_id) is None:  # deleted meanwhile
                 return

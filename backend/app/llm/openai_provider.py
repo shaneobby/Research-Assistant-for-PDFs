@@ -1,8 +1,18 @@
 """OpenAI-compatible chat completions. With OPENAI_BASE_URL this also covers Ollama, Groq,
 OpenRouter, LM Studio, vLLM, ..."""
+import logging
+import time
 from collections.abc import Iterator
 
 from .base import LLMError, LLMProvider, Message
+
+
+log = logging.getLogger(__name__)
+
+
+def _is_tpm_limit(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return getattr(exc, "status_code", None) in (413, 429) and ("per minute" in text or "rate limit" in text)
 
 
 class OpenAIProvider(LLMProvider):
@@ -24,12 +34,19 @@ class OpenAIProvider(LLMProvider):
         return [{"role": "system", "content": system}, *messages]
 
     def complete(self, system, messages: list[Message], *, max_tokens=2000, task=None, hints=None) -> str:
-        try:
-            resp = self._client.chat.completions.create(
-                model=self.model, messages=self._msgs(system, messages), max_tokens=max_tokens, temperature=0.2
-            )
-        except self._openai.OpenAIError as exc:
-            raise LLMError(f"OpenAI API error: {exc}") from exc
+        for attempt in range(4):
+            try:
+                resp = self._client.chat.completions.create(
+                    model=self.model, messages=self._msgs(system, messages), max_tokens=max_tokens, temperature=0.2
+                )
+                break
+            except self._openai.OpenAIError as exc:
+                # Free tiers cap tokens per minute: wait for the window to reset and retry.
+                if attempt < 3 and _is_tpm_limit(exc):
+                    log.warning("token-per-minute limit hit, waiting 20s (attempt %d)", attempt + 1)
+                    time.sleep(20)
+                    continue
+                raise LLMError(f"OpenAI API error: {exc}") from exc
         return resp.choices[0].message.content or ""
 
     def stream(self, system, messages: list[Message], *, max_tokens=1500, task=None, hints=None) -> Iterator[str]:
