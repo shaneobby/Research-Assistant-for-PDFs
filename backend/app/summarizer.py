@@ -17,6 +17,7 @@ from .chunking import WORDS_PER_TOKEN, Chunk
 from .llm import LLMError, LLMProvider
 from .pdf import PageText
 from .schemas import Summary
+from .textnorm import normalize_deep
 
 log = logging.getLogger(__name__)
 
@@ -31,9 +32,9 @@ SCHEMA_TEXT = """{
   "problem_statement": string,       // what problem / gap the paper addresses and why it matters (Markdown ok)
   "methodology": string,             // how they approach it: data, model, method, experimental setup (Markdown ok)
   "key_results": [string],           // 3-6 concrete findings, with numbers where the paper gives them
-  "conclusion": string,              // what they conclude, limitations, future work
+  "conclusion": string,              // ONLY what the authors state in their conclusion; no added limitations or future work
   "keywords": [string],              // 4-8 key terms
-  "suggested_questions": [string],   // exactly 3 insightful questions a reader might ask about this paper
+  "suggested_questions": [string],   // exactly 3 short (under 15 words) questions that this paper itself can answer
   "source_pages": {                  // 1-based page numbers supporting each section
     "problem_statement": [int], "methodology": [int], "key_results": [int], "conclusion": [int]
   }
@@ -42,7 +43,10 @@ SCHEMA_TEXT = """{
 SYSTEM = (
     "You are an expert research assistant who writes accurate, faithful summaries of academic papers. "
     "Use only information present in the provided text; never invent numbers, authors or claims. "
-    "Write clearly for a technically literate reader who has not read the paper."
+    "Write clearly for a technically literate reader who has not read the paper. "
+    "Every section, especially the conclusion, must reflect only what the authors state: mention limitations "
+    "or future work only if the authors wrote them, and never add your own opinions or extrapolations. "
+    "Use plain ASCII hyphens and spaces."
 )
 
 
@@ -149,7 +153,7 @@ def generate_summary(
     else:
         raise LLMError(f"Model did not return a valid summary: {last_err}")
 
-    return _fix_source_pages(summary, n_pages, page_lookup).model_dump()
+    return normalize_deep(_fix_source_pages(summary, n_pages, page_lookup).model_dump())
 
 
 def _fix_source_pages(summary: Summary, n_pages: int, page_lookup) -> Summary:

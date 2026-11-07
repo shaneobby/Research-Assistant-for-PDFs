@@ -53,3 +53,22 @@ def test_summary_retries_once_on_bad_json():
     assert FlakyProvider.calls == 2
     assert out["title"] == "A Title Here"
     assert np.all([p == [1] or p == [] for p in out["source_pages"].values()])
+
+
+def test_normalize_text_maps_odd_punctuation():
+    from app.textnorm import normalize_deep, normalize_text
+
+    assert normalize_text("self‑attention‐based") == "self-attention-based"
+    assert normalize_text("28.4 BLEU score") == "28.4 BLEU score"
+    assert normalize_text("see 【p. 8】") == "see [p. 8]"
+    assert normalize_text("soft­hyphen​") == "softhyphen"
+    assert normalize_text("plain – en dash and café stay") == "plain – en dash and café stay"
+    assert normalize_deep({"a": ["x‑y", {"b": " z"}], "n": 3}) == {"a": ["x-y", {"b": " z"}], "n": 3}
+
+
+def test_normalize_text_is_token_safe():
+    from app.textnorm import normalize_text
+
+    text = "the 【p. 8】 self‑attention model"
+    tokens = [text[i : i + 3] for i in range(0, len(text), 3)]  # arbitrary chunking
+    assert "".join(normalize_text(t) for t in tokens) == normalize_text(text)

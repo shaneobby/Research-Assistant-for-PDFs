@@ -3,6 +3,7 @@ from collections.abc import Iterator
 
 from .llm import LLMProvider
 from .retrieval import Hit
+from .textnorm import normalize_text
 
 MAX_HISTORY_TURNS = 6
 
@@ -14,7 +15,7 @@ REWRITE_SYSTEM = (
 ANSWER_SYSTEM = """You are a helpful research assistant answering questions about ONE research paper.
 Rules:
 - Answer ONLY from the numbered passages provided. Do not use outside knowledge about the paper.
-- Cite the page for every claim inline, like [p. 4] with plain ASCII square brackets (use the page given for the passage you used).
+- Cite the page for every claim inline in EXACTLY this form: [p. 4] (ASCII square brackets, lowercase p, a period, one page per bracket; for several pages write [p. 4] [p. 7]). Never write (p. 4), (Table 1, p. 4), pp. 4-5 or page 4. Use the page given for the passage you used.
 - If the passages do not contain the answer, say clearly that the paper doesn't seem to cover it
   (you may say what related information it does contain).
 - Be concise; use Markdown (short paragraphs, bullet lists, **bold** key terms) where it helps.
@@ -65,5 +66,5 @@ def answer_stream(
         task="answer",
         hints={"question": standalone, "passages": [(h.chunk.page, h.chunk.text) for h in hits]},
     ):
-        # Some models (e.g. gpt-oss) emit full-width brackets for citations; the UI expects [p. N].
-        yield piece.replace("【", "[").replace("】", "]")
+        # Some models emit full-width brackets or non-breaking hyphens; per-token mapping is safe (1:1 chars).
+        yield normalize_text(piece)
