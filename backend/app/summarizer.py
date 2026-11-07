@@ -106,6 +106,7 @@ def generate_summary(
     pages: list[PageText],
     chunks: list[Chunk],
     page_lookup: Callable[[str], list[int]] | None = None,
+    title_hint: str = "",
 ) -> dict:
     full = _page_tagged(pages)
     n_pages = len(pages)
@@ -119,12 +120,13 @@ def generate_summary(
             f"SECTION OUTLINE:\n{section_outline(pages)}\n\n"
             f"NOTES FROM THE WHOLE PAPER (page-cited):\n{notes}"
         )
+    hint = f"Likely title (largest font on page 1): {title_hint}\n" if title_hint else ""
     prompt = (
-        f"{material}\n\n---\nThe paper has {n_pages} pages. Summarize it as a single JSON object with exactly this "
+        f"{material}\n\n---\n{hint}The paper has {n_pages} pages. Summarize it as a single JSON object with exactly this "
         f"shape:\n{SCHEMA_TEXT}\n\nReturn ONLY the JSON object, no prose before or after."
     )
     messages = [{"role": "user", "content": prompt}]
-    hints = {"pages": pages}
+    hints = {"pages": pages, "title_hint": title_hint}
     last_err = None
     for attempt in range(2):
         raw = provider.complete(SYSTEM, messages, max_tokens=3000, task="summary", hints=hints)

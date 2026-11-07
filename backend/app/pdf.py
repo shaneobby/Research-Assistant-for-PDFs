@@ -36,6 +36,34 @@ def extract_pages(data: bytes) -> list[PageText]:
     return pages
 
 
+def guess_title(data: bytes) -> str:
+    """Title = the largest-font text in the top half of page 1 (falls back to PDF metadata)."""
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception:
+        return ""
+    try:
+        page = doc[0]
+        spans = [
+            (round(s["size"], 1), s["text"].strip(), s["bbox"][1])
+            for b in page.get_text("dict")["blocks"]
+            for ln in b.get("lines", [])
+            for s in ln["spans"]
+            if s["text"].strip() and s["bbox"][1] < page.rect.height * 0.5
+        ]
+        candidates = [s for s in spans if len(s[1]) > 3 and not s[1].lower().startswith("arxiv")]
+        if candidates:
+            top = max(s[0] for s in candidates)
+            title = " ".join(t for size, t, _ in sorted(spans, key=lambda s: s[2]) if abs(size - top) < 0.6)
+            title = " ".join(title.split())
+            if 2 <= len(title.split()) <= 30:
+                return title
+        meta = (doc.metadata or {}).get("title", "").strip()
+        return meta if len(meta.split()) >= 2 else ""
+    finally:
+        doc.close()
+
+
 def _clean(text: str) -> str:
     # Re-join words hyphenated across line breaks, normalise whitespace per line.
     text = text.replace("­", "")

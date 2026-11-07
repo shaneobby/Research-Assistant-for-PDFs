@@ -40,10 +40,10 @@ def _is_heading(line: str) -> bool:
 
 def _find_section(pages, key: str) -> tuple[str, list[int]]:
     """Return (text, pages) of the first section whose heading matches `key`."""
-    pat = re.compile(_HEAD_NUM + SECTION_PATTERNS[key] + r"\b\s*[:.]?\s*$", re.I)
+    pat = re.compile(_HEAD_NUM + SECTION_PATTERNS[key] + r"\b[\w ,&\-]{0,40}[:.]?\s*$", re.I)
     lines = [(p.page, ln.strip()) for p in pages for ln in p.text.splitlines()]
     for i, (_, ln) in enumerate(lines):
-        if len(ln) < 60 and pat.match(ln):
+        if len(ln) < 60 and len(ln.split()) <= 6 and pat.match(ln):
             body, used = [], set()
             for pg, nxt in lines[i + 1 :]:
                 if _is_heading(nxt) and body:
@@ -57,21 +57,39 @@ def _find_section(pages, key: str) -> tuple[str, list[int]]:
     return "", []
 
 
-def extractive_summary(pages) -> dict:
+_NOT_NAME = re.compile(
+    r"universit|institut|research|google|brain|lab|department|school|college|inc\b|corp|abstract|conference|"
+    r"arxiv|proceedings|copyright|permission|http|www|\d{4}",
+    re.I,
+)
+
+
+def extractive_summary(pages, title_hint: str = "") -> dict:
     first_lines = [ln.strip() for ln in pages[0].text.splitlines() if ln.strip()]
-    title = next((ln for ln in first_lines if len(ln.split()) >= 2 and not ln.lower().startswith("arxiv")), "Untitled")
-    authors: list[str] = []
-    try:
-        start = first_lines.index(title) + 1
-    except ValueError:
-        start = 1
-    for ln in first_lines[start : start + 4]:
-        if _is_heading(ln) or "@" in ln or len(ln) > 120:
+    title = title_hint or next(
+        (ln for ln in first_lines if len(ln.split()) >= 2 and not ln.lower().startswith("arxiv")), "Untitled"
+    )
+    # Authors: name-looking fragments between the title and the abstract.
+    start = 0
+    last_title_word = title.split()[-1].lower()
+    for i, ln in enumerate(first_lines[:40]):
+        if ln.lower().endswith(last_title_word):
+            start = i + 1
             break
-        for name in re.split(r",|\band\b|;|·", ln):
-            name = re.sub(r"[\d*†‡§]+", "", name).strip()
-            if 1 < len(name.split()) <= 4 and all(w[:1].isupper() for w in name.split()):
-                authors.append(name)
+    authors: list[str] = []
+    for ln in first_lines[start : start + 30]:
+        if re.match(_HEAD_NUM + r"(abstract|introduction)\b", ln, re.I):
+            break
+        if len(ln) > 200:
+            continue
+        for name in re.split(r",|\band\b|;|·|\s{2,}|[*†‡§∗]+\s*", ln):
+            name = re.sub(r"[\d*†‡§∗]+", "", name).strip()
+            if "@" in name or _NOT_NAME.search(name):
+                continue
+            words = name.split()
+            if 1 < len(words) <= 4 and all(w[:1].isupper() and w.replace(".", "").replace("-", "").isalpha() for w in words):
+                if name not in authors:
+                    authors.append(name)
     abstract, _ = _find_section(pages, "abstract")
     if not abstract:
         abstract = " ".join(_sentences(pages[0].text)[:4])
@@ -92,8 +110,12 @@ def extractive_summary(pages) -> dict:
     results = [s for s in sections["key_results"] if re.search(r"\d|outperform|improv|achiev|better", s, re.I)]
     results = (results or sections["key_results"])[:4]
 
-    counts = Counter(t for t in tokenize(all_text) if len(t) > 3 and not t.isdigit())
-    keywords = [w for w, _ in counts.most_common(8)][:6]
+    counts = Counter(
+        t.rstrip("s") if len(t) > 4 else t
+        for t in tokenize(all_text)
+        if len(t) > 3 and t.isalpha() and t not in {"arxiv", "table", "figure", "using", "used", "each", "other"}
+    )
+    keywords = [w for w, _ in counts.most_common(6)]
     kw = keywords[0] if keywords else "the method"
     return {
         "title": title,
@@ -129,7 +151,8 @@ class MockProvider(LLMProvider):
     def complete(self, system, messages: list[Message], *, max_tokens=2000, task=None, hints=None) -> str:
         hints = hints or {}
         if task == "summary":
-            return "```json\n" + json.dumps(extractive_summary(hints["pages"]), indent=2) + "\n```"
+            summary = extractive_summary(hints["pages"], hints.get("title_hint", ""))
+            return "```json\n" + json.dumps(summary, indent=2) + "\n```"
         if task == "summary_map":
             return "\n".join(
                 f"- {' '.join(_sentences(text)[:2])} [p. {page}]" for page, text in hints.get("chunks", [])

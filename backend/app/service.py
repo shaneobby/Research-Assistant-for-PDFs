@@ -8,7 +8,7 @@ from .config import Settings
 from .db import Store
 from .embeddings import get_embedder
 from .llm import LLMProvider
-from .pdf import extract_pages
+from .pdf import extract_pages, guess_title
 from .retrieval import Hit, IndexCache
 from .summarizer import generate_summary
 
@@ -50,7 +50,15 @@ class PaperService:
                 self.indexes.drop(paper_id)
                 log.info("indexed %s: %d chunks", paper_id, len(chunks))
             chunks, _ = self.store.load_chunks(paper_id)
-            summary = generate_summary(self.provider, pages, chunks, page_lookup=lambda t: self._pages_for(paper_id, t))
+            pdf_file = self.store.pdf_path(paper_id)
+            title_hint = guess_title(pdf_file.read_bytes()) if pdf_file.exists() else ""
+            summary = generate_summary(
+                self.provider,
+                pages,
+                chunks,
+                page_lookup=lambda t: self._pages_for(paper_id, t),
+                title_hint=title_hint,
+            )
             if self.store.get_paper(paper_id) is None:  # deleted meanwhile
                 return
             self.store.set_status(paper_id, "ready", summary=summary)
