@@ -1,8 +1,21 @@
 import type { ChatMessage, Paper, Summary } from '../api/types'
 
+const PAGE_NUM = String.raw`\d{1,4}(?:\s*[–-]\s*\d{1,4})?`
+// "p. 6", "pp. 6–7", "page 6", "pages 6, 8 and 9"
+const MENTION_SRC = String.raw`\b(?:pp?\.|pages?)\s*${PAGE_NUM}(?:\s*(?:,|;|and|&)\s*${PAGE_NUM})*`
+const MARKER_RE = /\b(?:pp?\.|pages?)/gi
+const JOINER_RE = /\b(?:and|&)\b/gi
+const GROUP_RE = /\[([^[\]\n]{1,200})\](?!\()|\(([^()\n]{1,200})\)/g
+
+const chips = (pages: number[]) => pages.map((p) => `[p. ${p}](#page-${p})`).join(' ')
+const pagesOf = (mention: string) => expandPages(mention.replace(MARKER_RE, ' ').replace(JOINER_RE, ','))
+
 /**
- * Turn inline citations such as `[p. 4]`, `[p.4, 7]`, `[pp. 3-5]` or `[page 2]` into links
- * with a `#page-N` href, which the Markdown renderer shows as clickable page chips.
+ * Turn page citations into links with a `#page-N` href, which the Markdown renderer shows as
+ * clickable page chips. Handles `[p. 4]`, `[p.4, 7]`, `[pp. 3-5]`, `[page 2]` and the same mentions
+ * inside parentheses or brackets with other text, e.g. `(p. 6)`, `(Table 1, p. 6)`, `(pp. 6–7)`.
+ * Ranges and lists give one chip per page. A page mention is only recognised with a `p.`/`pp.`/
+ * `page(s)` marker inside a bracket or parenthesis group, so "step 6" or "(n = 6)" are untouched.
  * Code spans and fenced blocks are left alone.
  */
 export function linkCitations(md: string): string {
@@ -10,10 +23,20 @@ export function linkCitations(md: string): string {
   return parts
     .map((part, i) => {
       if (i % 2 === 1) return part // code
-      return part.replace(/\[(?:pp?\.|pages?)\s*([\d\s,–-]+)\](?!\()/gi, (whole, list: string) => {
-        const pages = expandPages(list)
-        if (!pages.length) return whole
-        return pages.map((p) => `[p. ${p}](#page-${p})`).join(' ')
+      return part.replace(GROUP_RE, (whole, square: string | undefined, round: string | undefined) => {
+        const inner = square ?? round ?? ''
+        if (!new RegExp(MENTION_SRC, 'i').test(inner)) return whole
+        const mention = new RegExp(MENTION_SRC, 'gi')
+        const pure = inner.replace(mention, '').replace(/[\s,;]/g, '') === ''
+        if (pure) {
+          const pages = pagesOf(inner)
+          return pages.length ? chips(pages) : whole
+        }
+        const replaced = inner.replace(new RegExp(MENTION_SRC, 'gi'), (m) => {
+          const pages = pagesOf(m)
+          return pages.length ? chips(pages) : m
+        })
+        return square !== undefined ? `[${replaced}]` : `(${replaced})`
       })
     })
     .join('')
@@ -21,7 +44,7 @@ export function linkCitations(md: string): string {
 
 function expandPages(list: string): number[] {
   const out: number[] = []
-  for (const piece of list.split(',')) {
+  for (const piece of list.split(/[,;]/)) {
     const range = piece.trim().split(/\s*[–-]\s*/)
     const a = parseInt(range[0], 10)
     const b = range.length > 1 ? parseInt(range[1], 10) : a
