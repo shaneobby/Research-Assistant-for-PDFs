@@ -14,7 +14,7 @@ REWRITE_SYSTEM = (
 ANSWER_SYSTEM = """You are a helpful research assistant answering questions about ONE research paper.
 Rules:
 - Answer ONLY from the numbered passages provided. Do not use outside knowledge about the paper.
-- Cite the page for every claim inline, like [p. 4] (use the page given for the passage you used).
+- Cite the page for every claim inline, like [p. 4] with plain ASCII square brackets (use the page given for the passage you used).
 - If the passages do not contain the answer, say clearly that the paper doesn't seem to cover it
   (you may say what related information it does contain).
 - Be concise; use Markdown (short paragraphs, bullet lists, **bold** key terms) where it helps.
@@ -50,17 +50,20 @@ def answer_stream(
     # Anthropic requires the first message to be from the user.
     while messages and messages[0]["role"] != "user":
         messages.pop(0)
-    note = f"\n(Interpreted as: {standalone})" if standalone != question else ""
+    # Lead with the standalone version so the model answers *this* question, not the previous turn's.
+    asked = f"{standalone}\n(The user's wording: {question})" if standalone != question else question
     messages.append(
         {
             "role": "user",
-            "content": f"Passages from the paper:\n\n{format_passages(hits)}\n\n---\nQuestion: {question}{note}",
+            "content": f"Passages from the paper:\n\n{format_passages(hits)}\n\n---\nQuestion: {asked}",
         }
     )
-    yield from provider.stream(
+    for piece in provider.stream(
         ANSWER_SYSTEM,
         messages,
         max_tokens=1500,
         task="answer",
         hints={"question": standalone, "passages": [(h.chunk.page, h.chunk.text) for h in hits]},
-    )
+    ):
+        # Some models (e.g. gpt-oss) emit full-width brackets for citations; the UI expects [p. N].
+        yield piece.replace("【", "[").replace("】", "]")
