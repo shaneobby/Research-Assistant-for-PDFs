@@ -48,6 +48,8 @@ export interface ChatTurn {
 export interface ChatMessage extends ChatTurn {
   id: string
   sources?: SourceChunk[]
+  /** Standalone question the backend actually retrieved with (follow-ups get rewritten). */
+  query?: string
   error?: string
   stopped?: boolean
   createdAt: number

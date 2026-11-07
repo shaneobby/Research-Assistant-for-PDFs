@@ -48,7 +48,7 @@ export function useChat(paperId: string) {
           q,
           history,
           {
-            onSources: (chunks) => patchLast((m) => ({ ...m, sources: chunks })),
+            onSources: (chunks, query) => patchLast((m) => ({ ...m, sources: chunks, query })),
             onToken: (text) => patchLast((m) => ({ ...m, content: m.content + text })),
             onError: (detail) => patchLast((m) => ({ ...m, error: detail })),
           },

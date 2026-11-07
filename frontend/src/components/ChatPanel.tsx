@@ -111,6 +111,7 @@ export function ChatPanel({ paper, onJump, ask }: Props) {
               <Message
                 key={m.id}
                 message={m}
+                question={i > 0 ? messages[i - 1].content : undefined}
                 live={streaming && i === messages.length - 1}
                 onJump={onJump}
                 onRetry={i === messages.length - 1 && !streaming ? retry : undefined}
@@ -197,13 +198,20 @@ function EmptyChat({ suggestions, ready, onPick }: { suggestions: string[]; read
   )
 }
 
+const norm = (s?: string) => (s ?? '').trim().toLowerCase().replace(/[?.!\s]+$/, '')
+/** The retrieval query, only when the backend rewrote the question (e.g. a follow-up). */
+const rewritten = (query: string | undefined, question: string | undefined) =>
+  query && norm(query) !== norm(question) ? query : undefined
+
 function Message({
   message: m,
+  question,
   live,
   onJump,
   onRetry,
 }: {
   message: ChatMessage
+  question?: string
   live: boolean
   onJump: (p: number) => void
   onRetry?: () => void
@@ -258,13 +266,23 @@ function Message({
             <RotateCcw className="size-3" /> Try again
           </button>
         )}
-        {m.sources && m.sources.length > 0 && !waiting && <Sources sources={m.sources} onJump={onJump} />}
+        {m.sources && m.sources.length > 0 && !waiting && (
+          <Sources sources={m.sources} query={rewritten(m.query, question)} onJump={onJump} />
+        )}
       </div>
     </div>
   )
 }
 
-function Sources({ sources, onJump }: { sources: SourceChunk[]; onJump: (p: number) => void }) {
+function Sources({
+  sources,
+  query,
+  onJump,
+}: {
+  sources: SourceChunk[]
+  query?: string
+  onJump: (p: number) => void
+}) {
   // Scores differ by retriever (cosine, BM25, RRF), so bars are relative to the best passage.
   const max = Math.max(...sources.map((s) => s.score), 1e-9)
   return (
@@ -281,6 +299,11 @@ function Sources({ sources, onJump }: { sources: SourceChunk[]; onJump: (p: numb
           ))}
         </span>
       </summary>
+      {query && (
+        <p className="border-t border-line-muted px-3 pt-2 text-xs text-ink-muted">
+          Searched for: <span className="italic text-ink">“{query}”</span>
+        </p>
+      )}
       <ol className="space-y-2 border-t border-line-muted px-3 py-3">
         {sources.map((s, i) => (
           <li key={`${s.id}-${i}`} className="flex gap-3">
