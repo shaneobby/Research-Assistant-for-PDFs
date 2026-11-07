@@ -1,7 +1,7 @@
 """PDF validation and per-page text extraction (PyMuPDF)."""
 from dataclasses import dataclass
 
-import fitz  # PyMuPDF
+import pymupdf as fitz
 
 MIN_TEXT_CHARS = 200
 
