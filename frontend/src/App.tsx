@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, FileText, MessageSquareText, NotebookText, RefreshCw, Trash2 } from 'lucide-react'
 import { api } from './api/client'
 import type { Paper } from './api/types'
 import { ChatPanel, type AskRequest } from './components/ChatPanel'
 import { Header } from './components/Header'
 import { Library } from './components/Library'
-import { PdfViewer, type JumpRequest } from './components/PdfViewer'
+import type { JumpRequest } from './components/PdfViewer'
 import { PrintSummary } from './components/PrintSummary'
 import { SummarySkeleton } from './components/Skeletons'
 import { SummaryView } from './components/SummaryView'
@@ -15,6 +15,9 @@ import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePaper } from './hooks/usePaper'
 import { useTheme } from './hooks/useTheme'
 import { keys, readJSON, removeKey, writeJSON } from './lib/storage'
+
+// pdf.js is large; load it only once a paper is open.
+const PdfViewer = lazy(() => import('./components/PdfViewer').then((m) => ({ default: m.PdfViewer })))
 
 type Tab = 'pdf' | 'summary' | 'chat'
 const TITLES_KEY = 'marginalia:titles'
@@ -263,7 +266,11 @@ function Workspace({
     { id: 'chat', label: 'Chat', icon: MessageSquareText },
   ]
 
-  const pdf = <PdfViewer url={api.pdfUrl(paper.id)} filename={paper.filename} jump={jump} />
+  const pdf = (
+    <Suspense fallback={<div className="h-full bg-canvas" />}>
+      <PdfViewer url={api.pdfUrl(paper.id)} filename={paper.filename} jump={jump} />
+    </Suspense>
+  )
 
   let summaryBody
   if (paper.status === 'processing') summaryBody = <SummarySkeleton filename={paper.filename} />
@@ -326,7 +333,7 @@ function Workspace({
 
   if (!isDesktop) return panel
   return (
-    <div className="grid h-full grid-cols-2">
+    <div className="grid h-full grid-cols-2 grid-rows-1">
       <div className="min-w-0 border-r border-line-muted">{pdf}</div>
       <div className="min-w-0">{panel}</div>
     </div>

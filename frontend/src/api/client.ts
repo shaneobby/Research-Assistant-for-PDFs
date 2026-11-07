@@ -76,7 +76,7 @@ function uploadPaper(file: File, onProgress: (fraction: number) => void, signal?
 }
 
 export interface ChatHandlers {
-  onSources?: (chunks: SourceChunk[]) => void
+  onSources?: (chunks: SourceChunk[], query?: string) => void
   onToken: (text: string) => void
   onDone?: () => void
   onError?: (detail: string) => void
@@ -109,6 +109,8 @@ async function streamChat(
   if (!res.body) throw new ApiError(0, 'The server returned an empty stream.')
 
   const reader = res.body.getReader()
+  // Make Stop end the read loop promptly, whatever the underlying stream does with the signal.
+  signal?.addEventListener('abort', () => reader.cancel().catch(() => {}), { once: true })
   const decoder = new TextDecoder()
   let buffer = ''
   let finished = false
@@ -134,7 +136,10 @@ async function streamChat(
     }
     switch (event) {
       case 'sources':
-        handlers.onSources?.((data.chunks as SourceChunk[]) ?? [])
+        handlers.onSources?.(
+          (data.chunks as SourceChunk[]) ?? [],
+          typeof data.query === 'string' ? data.query : undefined,
+        )
         break
       case 'token':
         handlers.onToken(String(data.text ?? ''))
@@ -158,6 +163,7 @@ async function streamChat(
     buffer = parts.pop() ?? ''
     for (const part of parts) dispatch(part)
   }
+  if (signal?.aborted) throw new DOMException('Generation stopped', 'AbortError')
   buffer += decoder.decode()
   if (buffer.trim()) dispatch(buffer)
   if (!finished) handlers.onDone?.()

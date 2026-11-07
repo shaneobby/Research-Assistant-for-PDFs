@@ -68,7 +68,7 @@ function listing(): Paper[] {
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
 }
 
-function sse(paper: Paper, question: string, signal?: AbortSignal | null): Response {
+function sse(paper: Paper, question: string, hasHistory: boolean, signal?: AbortSignal | null): Response {
   const pick = MOCK_ANSWERS.find((a) => a.match.test(question)) ?? MOCK_FALLBACK
   const pages = pick.pages.filter((p) => p <= paper.pages)
   const chunks: SourceChunk[] = (pages.length ? pages : [1]).map((page, i) => ({
@@ -84,9 +84,11 @@ function sse(paper: Paper, question: string, signal?: AbortSignal | null): Respo
       const send = (event: string, data: unknown) =>
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
       await sleep(350)
-      send('sources', { chunks })
+      // Mimic the backend rewriting short follow-ups into standalone queries.
+      const query = hasHistory && question.split(' ').length < 6 ? `${question} (in ${SAMPLE_TITLE.split(':')[0]})` : question
+      send('sources', { chunks, query })
       for (const t of tokens) {
-        if (signal?.aborted) return
+        if (signal?.aborted) return controller.error(new DOMException('Aborted', 'AbortError'))
         await sleep(18 + Math.random() * 30)
         send('token', { text: t })
       }
@@ -124,8 +126,8 @@ async function handle(url: URL, init: RequestInit = {}): Promise<Response> {
   }
   if (sub === 'chat' && method === 'POST') {
     if (entry.paper.status !== 'ready') return json({ detail: 'Paper is not ready yet' }, 409)
-    const body = JSON.parse(String(init.body ?? '{}')) as { question?: string }
-    return sse(entry.paper, body.question ?? '', init.signal)
+    const body = JSON.parse(String(init.body ?? '{}')) as { question?: string; history?: unknown[] }
+    return sse(entry.paper, body.question ?? '', (body.history?.length ?? 0) > 0, init.signal)
   }
   if (sub === 'pdf') return fetch(entry.pdfUrl)
   return json({ detail: 'Method not allowed' }, 405)
