@@ -116,7 +116,19 @@ LLM_PROVIDER=openai
 OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_API_KEY=ollama
 LLM_MODEL=llama3.1
+
+# Groq free tier (8000 tokens/minute, so shrink the summary pipeline)
+LLM_PROVIDER=openai
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_API_KEY=gsk_...
+LLM_MODEL=openai/gpt-oss-120b
+SUMMARY_SINGLE_PASS_TOKENS=4000
+SUMMARY_MAP_GROUP_TOKENS=3000
+TOP_K=4
 ```
+
+The screenshots above were taken with the Groq setup (`openai/gpt-oss-120b`). When a provider reports a
+tokens-per-minute limit, the backend waits and retries instead of failing.
 
 The header pill in the UI shows which provider and model are active. Details: [backend/README.md](backend/README.md).
 
