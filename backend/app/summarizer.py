@@ -58,16 +58,29 @@ def _page_tagged(pages: list[PageText]) -> str:
     return "\n\n".join(f"=== Page {p.page} ===\n{p.text}" for p in pages)
 
 
-def section_outline(pages: list[PageText]) -> str:
-    """Lines that look like section headings, with their page numbers."""
-    pat = re.compile(r"^((\d+(\.\d+)*\.?)|[IVX]+\.|[A-Z]\.)\s+[A-Z][\w\- ,:&]{2,60}$|^[A-Z][A-Z \-&]{3,40}$")
+HEADING_RE = re.compile(r"^((\d+(\.\d+)*\.?)|[IVX]+\.|[A-Z]\.)\s+[A-Z][\w\- ,:&]{2,60}$|^[A-Z][A-Z \-&]{3,40}$")
+
+
+NUMBER_ONLY_RE = re.compile(r"^\d{1,2}(\.\d{1,2})*\.?$")
+
+
+def find_headings(pages: list[PageText]) -> list[tuple[str, int]]:
+    """(heading line, page) for lines that look like section headings, in reading order."""
     out = []
     for p in pages:
-        for ln in p.text.splitlines():
-            ln = ln.strip()
-            if pat.match(ln) and len(ln.split()) <= 8:
-                out.append(f"- {ln} (p. {p.page})")
-    return "\n".join(out[:80]) or "(no headings detected)"
+        lines = [ln.strip() for ln in p.text.splitlines()]
+        for i, ln in enumerate(lines):
+            # Two-column layouts often put the section number on a line of its own ("5" then "Conclusion").
+            if NUMBER_ONLY_RE.match(ln) and i + 1 < len(lines):
+                ln = f"{ln} {lines[i + 1]}"
+            if HEADING_RE.match(ln) and len(ln.split()) <= 8:
+                out.append((ln, p.page))
+    return out
+
+
+def section_outline(pages: list[PageText]) -> str:
+    """Lines that look like section headings, with their page numbers."""
+    return "\n".join(f"- {ln} (p. {pg})" for ln, pg in find_headings(pages)[:80]) or "(no headings detected)"
 
 
 def extract_json(text: str) -> dict:
@@ -153,13 +166,51 @@ def generate_summary(
     else:
         raise LLMError(f"Model did not return a valid summary: {last_err}")
 
-    return normalize_deep(_fix_source_pages(summary, n_pages, page_lookup).model_dump())
+    return normalize_deep(_fix_source_pages(summary, n_pages, page_lookup, find_headings(pages)).model_dump())
 
 
-def _fix_source_pages(summary: Summary, n_pages: int, page_lookup) -> Summary:
-    """Keep a cited page only if it exists and is among the top retrieval hits for that section's text.
+# Which headings own which summary field. A heading only counts when it is a numbered or all-caps line
+# whose title is exactly one of these words, so "3 BERT" simply matches nothing and the field falls back
+# to retrieval alone.
+SECTION_TITLES = {
+    "problem_statement": r"introduction|background|motivation",
+    "methodology": r"methods?|methodology|approach|model|materials and methods",
+    "key_results": r"results?|experiments?|experimental results|evaluation|results and discussion",
+    "conclusion": r"conclusions?|conclusions? and future work|concluding remarks|discussion and conclusions?",
+}
+HEADING_NUM = re.compile(r"^(?:\d+(?:\.\d+)*\.?|[IVX]+\.|[A-Z]\.)\s+")
+MAX_CLAIMS = 8
 
-    If nothing survives (or the model gave no pages), fall back to the best retrieved pages.
+
+def _claims(value) -> list[str]:
+    """Split a summary section into separately checkable claims (list items, or sentences of prose)."""
+    parts = value if isinstance(value, list) else re.split(r"(?<=[.!?])\s+(?=[A-Z0-9*-])", value)
+    claims = [c.strip() for c in parts if len(c.strip()) >= 25]
+    return claims[:MAX_CLAIMS] or [c for c in [" ".join(parts).strip()] if c]
+
+
+def _section_pages(field: str, headings: list[tuple[str, int]], n_pages: int) -> set[int]:
+    """Pages from the heading that names this field up to the page of the next numbered top-level heading.
+
+    Unnumbered ALL-CAPS lines may start a section but never end one: table cells and column labels look the same.
+    """
+    top = [(HEADING_NUM.sub("", t).strip(), pg, bool(re.match(r"^(\d+|[IVX]+)\.?\s", t)), t.isupper()) for t, pg in headings]
+    for i, (title, pg, numbered, caps) in enumerate(top):
+        if (numbered or caps) and re.fullmatch(SECTION_TITLES[field], title, re.I):
+            end = next((p for _, p, n, _c in top[i + 1 :] if n), n_pages)
+            return set(range(pg, max(pg, end) + 1))
+    return set()
+
+
+def _fix_source_pages(summary: Summary, n_pages: int, page_lookup, headings=()) -> Summary:
+    """Pages that support a section, checked one claim at a time.
+
+    A whole section's text is a poor query: it paraphrases the abstract and introduction, which then outrank
+    the passage that really states it. So each claim is looked up on its own, and a cited page survives only if
+    some claim retrieves it. If the paper has a heading that names the field (e.g. Conclusion) and a claim
+    retrieves a page inside it, those pages replace the rest, since the section itself is the best evidence.
+    With no usable evidence the model's pages are dropped rather than guessed, falling back to the two pages
+    that most claims retrieve.
     """
     sp = summary.source_pages
     for field in ("problem_statement", "methodology", "key_results", "conclusion"):
@@ -168,9 +219,18 @@ def _fix_source_pages(summary: Summary, n_pages: int, page_lookup) -> Summary:
             value = getattr(summary, field)
             text = " ".join(value) if isinstance(value, list) else value
             if text.strip():
-                hits = [p for p in page_lookup(text) if 1 <= p <= n_pages]
-                verified = [p for p in pages if p in hits]
-                pages = verified or sorted(hits[:2])
+                votes: dict[int, int] = {}
+                for claim in _claims(value):
+                    for p in dict.fromkeys(page_lookup(claim)):
+                        if 1 <= p <= n_pages:
+                            votes[p] = votes.get(p, 0) + 1
+                section = _section_pages(field, list(headings), n_pages)
+                # The last page of a section also holds the start of the next one, so it needs the model's vote too.
+                in_section = sorted(p for p in set(votes) & section if p != max(section) or p in pages)
+                log.debug("source_pages %s: votes=%s section=%s cited=%s", field, votes, sorted(section), pages)
+                verified = [p for p in pages if p in votes]
+                best = sorted(sorted(votes, key=lambda p: -votes[p])[:2])
+                pages = in_section or verified or best
         setattr(sp, field, pages)
     summary.suggested_questions = summary.suggested_questions[:3]
     return summary
