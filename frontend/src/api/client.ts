@@ -3,6 +3,8 @@ import type { ChatTurn, Health, Paper, SourceChunk } from './types'
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 export const IS_MOCK = import.meta.env.VITE_MOCK === '1'
 
+const CUT_OFF = 'Answer was cut off: the connection closed before it finished.'
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -155,16 +157,22 @@ async function streamChat(
     }
   }
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split(/\r?\n\r?\n/)
-    buffer = parts.pop() ?? ''
-    for (const part of parts) dispatch(part)
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split(/\r?\n\r?\n/)
+      buffer = parts.pop() ?? ''
+      for (const part of parts) dispatch(part)
+    }
+  } catch (e) {
+    if (signal?.aborted || (e as Error).name === 'AbortError') throw new DOMException('Generation stopped', 'AbortError')
+    throw new ApiError(0, CUT_OFF) // connection dropped mid-answer
   }
   if (signal?.aborted) throw new DOMException('Generation stopped', 'AbortError')
   buffer += decoder.decode()
   if (buffer.trim()) dispatch(buffer)
-  if (!finished) handlers.onDone?.()
+  // The server always ends with `done` or `error`; anything else means the stream was cut short.
+  if (!finished) throw new ApiError(0, CUT_OFF)
 }
