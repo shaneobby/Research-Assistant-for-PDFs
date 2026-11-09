@@ -9,6 +9,8 @@ const GROUP_RE = /\[([^[\]\n]{1,200})\](?!\()|\(([^()\n]{1,200})\)/g
 
 const chips = (pages: number[]) => pages.map((p) => `[p. ${p}](#page-${p})`).join(' ')
 const BRACKET_RE = /\[([^[\]\n]{1,200})\](?!\()/g
+// Models sometimes repeat a citation, as in "[p. 4] [p. 4]". Only chips separated by spaces or list punctuation collapse.
+const REPEATED_CHIP_RE = /(\[p\. (\d+)\]\(#page-\2\))(?:[ \t]*[,;]?[ \t]*\1)+/g
 
 /**
  * Turn page citations into links with a `#page-N` href, which the Markdown renderer shows as
@@ -35,7 +37,7 @@ export function linkCitations(md: string, maxPage?: number): string {
   return parts
     .map((part, i) => {
       if (i % 2 === 1) return part // code
-      return part.replace(GROUP_RE, (whole, square: string | undefined, round: string | undefined) => {
+      const linked = part.replace(GROUP_RE, (whole, square: string | undefined, round: string | undefined) => {
         const inner = square ?? round ?? ''
         if (!hasMention(inner)) return whole
         if (isPure(inner)) {
@@ -52,6 +54,7 @@ export function linkCitations(md: string, maxPage?: number): string {
         })
         return `(${linkMentions(unwrapped).replace(/⟦(\d+)⟧/g, (_, n: string) => done[Number(n)])})`
       })
+      return linked.replace(REPEATED_CHIP_RE, '$1')
     })
     .join('')
 }
