@@ -3,6 +3,11 @@ import type { ChatTurn, Health, Paper, SourceChunk } from './types'
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 export const IS_MOCK = import.meta.env.VITE_MOCK === '1'
 
+// The server sends an SSE ping comment every 15 s (EventSourceResponse ping=15), even while the
+// model is silent or retrying a rate limit. No bytes for this long therefore means the connection
+// is dead, e.g. the Vite dev proxy keeps the client socket open after the backend dies.
+const IDLE_TIMEOUT_MS = 35_000
+
 const CUT_OFF = 'Answer was cut off: the connection closed before it finished.'
 
 export class ApiError extends Error {
@@ -113,6 +118,15 @@ async function streamChat(
   const reader = res.body.getReader()
   // Make Stop end the read loop promptly, whatever the underlying stream does with the signal.
   signal?.addEventListener('abort', () => reader.cancel().catch(() => {}), { once: true })
+  let idleTimedOut = false
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  const armIdle = () => {
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => {
+      idleTimedOut = true
+      reader.cancel().catch(() => {})
+    }, IDLE_TIMEOUT_MS)
+  }
   const decoder = new TextDecoder()
   let buffer = ''
   let finished = false
@@ -157,10 +171,12 @@ async function streamChat(
     }
   }
 
+  armIdle()
   try {
     while (true) {
       const { value, done } = await reader.read()
       if (done) break
+      armIdle()
       buffer += decoder.decode(value, { stream: true })
       const parts = buffer.split(/\r?\n\r?\n/)
       buffer = parts.pop() ?? ''
@@ -169,8 +185,11 @@ async function streamChat(
   } catch (e) {
     if (signal?.aborted || (e as Error).name === 'AbortError') throw new DOMException('Generation stopped', 'AbortError')
     throw new ApiError(0, CUT_OFF) // connection dropped mid-answer
+  } finally {
+    clearTimeout(idleTimer)
   }
   if (signal?.aborted) throw new DOMException('Generation stopped', 'AbortError')
+  if (idleTimedOut) throw new ApiError(0, CUT_OFF) // reader.cancel() ends the loop cleanly
   buffer += decoder.decode()
   if (buffer.trim()) dispatch(buffer)
   // The server always ends with `done` or `error`; anything else means the stream was cut short.
