@@ -74,6 +74,9 @@ npm run dev                     # http://localhost:5173, proxies /api to :8000
 docker compose up --build       # UI on http://localhost:8080
 ```
 
+The app has no login, so Docker publishes it on this computer only. To share it on a network, remove `127.0.0.1:` from
+the port in `docker-compose.yml` and add your hostname to `ALLOWED_HOSTS`.
+
 Runs with the mock provider by default. Pass `LLM_PROVIDER`, `ANTHROPIC_API_KEY` etc. as environment variables or in
 a `.env` file next to `docker-compose.yml`. Papers persist in the `paper-data` volume.
 
@@ -189,7 +192,7 @@ Full request/response shapes in [docs/API_CONTRACT.md](docs/API_CONTRACT.md); in
 ## Tests
 
 ```bash
-cd backend && pytest             # 17 tests: upload, summary shape, SSE chat, delete, error cases, units
+cd backend && pytest             # upload, summary shape, SSE chat, delete, error cases, units
 cd frontend && npm run lint && npm run build
 ```
 
