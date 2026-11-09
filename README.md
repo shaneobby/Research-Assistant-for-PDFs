@@ -103,6 +103,8 @@ Set these in `backend/.env` (or the environment).
 | `CHUNK_OVERLAP_TOKENS` | `60` | changing either chunk value or the embedding model re-indexes existing papers on the next start |
 | `DATA_DIR` | `./data` | PDFs and SQLite DB |
 | `MAX_UPLOAD_MB` | `25` | |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | origins allowed to make browser requests |
+| `ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1],backend` | Host names the API accepts (no port). **A deployment on a custom domain must add it here, or every request gets `400 Invalid host header`.** |
 
 ```bash
 # Claude
