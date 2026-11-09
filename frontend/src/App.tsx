@@ -274,7 +274,7 @@ function Workspace({
 
   let summaryBody
   if (paper.status === 'processing') summaryBody = <SummarySkeleton filename={paper.filename} />
-  else if (paper.status === 'error' || !paper.summary)
+  else if (!paper.summary)
     summaryBody = (
       <CenteredNote
         title="This paper couldn’t be summarised"

@@ -24,7 +24,7 @@ export function ChatPanel({ paper, onJump, ask }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const stickRef = useRef(true)
   const handledAsk = useRef<number | null>(null)
-  const ready = paper.status === 'ready'
+  const ready = paper.status === 'ready' || (paper.status === 'error' && Boolean(paper.summary)) // a failed regenerate keeps the index
   const suggestions = paper.summary?.suggested_questions ?? []
 
   // Questions sent from the summary tab.
@@ -291,8 +291,6 @@ function Sources({
   query?: string
   onJump: (p: number) => void
 }) {
-  // Scores differ by retriever (cosine, BM25, RRF), so bars are relative to the best passage.
-  const max = Math.max(...sources.map((s) => s.score), 1e-9)
   return (
     <details className="group mt-3 rounded-lg border border-line-muted bg-surface text-sm">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-ink-muted select-none hover:text-ink [&::-webkit-details-marker]:hidden">
@@ -315,23 +313,13 @@ function Sources({
       <ol className="space-y-2 border-t border-line-muted px-3 py-3">
         {sources.map((s, i) => (
           <li key={`${s.id}-${i}`} className="flex gap-3">
-            <div className="flex w-12 shrink-0 flex-col items-start gap-1">
+            <div className="w-12 shrink-0">
               <PageChip page={s.page} onJump={onJump} size="md" />
-              <ScoreBar score={s.score} max={max} />
             </div>
             <p className="line-clamp-4 text-xs leading-relaxed text-ink-muted">{s.text}</p>
           </li>
         ))}
       </ol>
     </details>
-  )
-}
-
-function ScoreBar({ score, max }: { score: number; max: number }) {
-  const pct = Math.max(0.05, Math.min(1, score / max)) * 100
-  return (
-    <div className="h-1 w-full rounded-full bg-line-muted" title={`Relevance score ${score.toFixed(3)}`}>
-      <div className="h-1 rounded-full bg-primary/70" style={{ width: `${pct}%` }} />
-    </div>
   )
 }

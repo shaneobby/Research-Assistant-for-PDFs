@@ -43,6 +43,13 @@ export function SummaryView({ paper, summary: s, onJump, onRegenerate, onAsk }: 
         <ActionButton onClick={onRegenerate} icon={RefreshCw} label="Regenerate" className="sm:ml-auto" />
       </div>
 
+      {paper.status === 'error' && (
+        <div role="alert" className="mb-6 rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-ink">
+          <p className="font-medium">Regenerating failed, so this is the previous summary.</p>
+          {paper.error && <p className="mt-1 break-words text-ink-muted">{paper.error}</p>}
+        </div>
+      )}
+
       {/* Title block */}
       <header className="border-b border-line-muted pb-6">
         <p className="mb-3 font-mono text-[0.7rem] uppercase tracking-[0.18em] text-primary">

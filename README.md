@@ -25,7 +25,7 @@ built-in extractive `mock` provider, so you can try it right after cloning.
 - **Follow-up rewriting**: "How long did it take?" becomes a standalone query before retrieval, and the UI shows how
   it was interpreted.
 - **Map-reduce summarizer** for long papers, with pydantic validation and one automatic retry.
-- **Streaming chat** over SSE with Stop, retry, suggested questions, collapsible retrieved sources with relevance bars.
+- **Streaming chat** over SSE with Stop, retry, suggested questions, collapsible retrieved sources.
 - **Export**: summary as Markdown (download or copy), print/save as PDF, chat as Markdown.
 - **Provider-agnostic**: Anthropic, OpenAI, any OpenAI-compatible server (Ollama, Groq, OpenRouter) or the offline mock.
 - Library of past papers (persisted in SQLite), light/dark theme, error toasts, 17 backend tests,
@@ -231,7 +231,12 @@ All code was reviewed and verified by running it: tests, lint, build, and a brow
   produce noisy text. A real LLM gives much better output.
 - Text extraction can leave small artifacts (for example an arXiv stamp glued onto a sentence).
 - One paper at a time for upload and chat; no cross-paper questions.
-- No authentication or multi-user separation: it is a single-user local app.
+- Page citations show where an answer came from, but they can't prove the answer is right: a model can cite the
+  correct page and still get a detail wrong, such as attaching a score to the wrong dataset. Check important claims
+  against the PDF.
+- No authentication, rate limits, spending cap or multi-user separation: it is a single-user local app. Don't put it on
+  a public URL as is, because anyone who finds it could use up your API credit.
+- Summaries on free-tier APIs are slow: about 2 minutes for a 15-page paper on Groq, and longer for big papers.
 - Chat history lives in the browser's `localStorage`, not on the server.
 - Ideas: figure/table extraction, highlight the cited passage inside the PDF, evaluation of retrieval quality,
   reranking, and multi-paper comparison.
