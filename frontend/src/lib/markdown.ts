@@ -8,35 +8,49 @@ const JOINER_RE = /\b(?:and|&)\b/gi
 const GROUP_RE = /\[([^[\]\n]{1,200})\](?!\()|\(([^()\n]{1,200})\)/g
 
 const chips = (pages: number[]) => pages.map((p) => `[p. ${p}](#page-${p})`).join(' ')
-const pagesOf = (mention: string) => expandPages(mention.replace(MARKER_RE, ' ').replace(JOINER_RE, ','))
+const BRACKET_RE = /\[([^[\]\n]{1,200})\](?!\()/g
 
 /**
  * Turn page citations into links with a `#page-N` href, which the Markdown renderer shows as
  * clickable page chips. Handles `[p. 4]`, `[p.4, 7]`, `[pp. 3-5]`, `[page 2]` and the same mentions
- * inside parentheses or brackets with other text, e.g. `(p. 6)`, `(Table 1, p. 6)`, `(pp. 6–7)`.
- * Ranges and lists give one chip per page. A page mention is only recognised with a `p.`/`pp.`/
- * `page(s)` marker inside a bracket or parenthesis group, so "step 6" or "(n = 6)" are untouched.
+ * inside parentheses or brackets with other text, e.g. `(p. 6)`, `(Table 1, p. 6)`, `(pp. 6–7)`,
+ * `(see [p. 4])`. Ranges and lists give one chip per page. A page mention is only recognised with a
+ * `p.`/`pp.`/`page(s)` marker inside a bracket or parenthesis group, so "step 6" or "(n = 6)" are
+ * untouched. Pages below 1 or above `maxPage` (when given) never become chips and stay as typed.
  * Code spans and fenced blocks are left alone.
  */
-export function linkCitations(md: string): string {
+export function linkCitations(md: string, maxPage?: number): string {
+  const valid = (p: number) => p >= 1 && (maxPage === undefined || p <= maxPage)
+  const pagesOf = (mention: string) =>
+    expandPages(mention.replace(MARKER_RE, ' ').replace(JOINER_RE, ',')).filter(valid)
+  const isPure = (inner: string) => inner.replace(new RegExp(MENTION_SRC, 'gi'), '').replace(/[\s,;]/g, '') === ''
+  const hasMention = (inner: string) => new RegExp(MENTION_SRC, 'i').test(inner)
+  const linkMentions = (inner: string) =>
+    inner.replace(new RegExp(MENTION_SRC, 'gi'), (m) => {
+      const pages = pagesOf(m)
+      return pages.length ? chips(pages) : m
+    })
+
   const parts = md.split(/(```[\s\S]*?```|`[^`\n]*`)/g)
   return parts
     .map((part, i) => {
       if (i % 2 === 1) return part // code
       return part.replace(GROUP_RE, (whole, square: string | undefined, round: string | undefined) => {
         const inner = square ?? round ?? ''
-        if (!new RegExp(MENTION_SRC, 'i').test(inner)) return whole
-        const mention = new RegExp(MENTION_SRC, 'gi')
-        const pure = inner.replace(mention, '').replace(/[\s,;]/g, '') === ''
-        if (pure) {
+        if (!hasMention(inner)) return whole
+        if (isPure(inner)) {
           const pages = pagesOf(inner)
           return pages.length ? chips(pages) : whole
         }
-        const replaced = inner.replace(new RegExp(MENTION_SRC, 'gi'), (m) => {
-          const pages = pagesOf(m)
-          return pages.length ? chips(pages) : m
+        if (square !== undefined) return `[${linkMentions(inner)}]`
+        // Parenthesised text may contain its own bracketed citation, e.g. "(see [p. 4])".
+        const done: string[] = []
+        const unwrapped = inner.replace(BRACKET_RE, (b, content: string) => {
+          if (!hasMention(content) || !isPure(content) || !pagesOf(content).length) return b
+          done.push(linkMentions(content))
+          return `⟦${done.length - 1}⟧`
         })
-        return square !== undefined ? `[${replaced}]` : `(${replaced})`
+        return `(${linkMentions(unwrapped).replace(/⟦(\d+)⟧/g, (_, n: string) => done[Number(n)])})`
       })
     })
     .join('')

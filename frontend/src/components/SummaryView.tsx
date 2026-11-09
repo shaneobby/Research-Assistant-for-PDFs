@@ -73,7 +73,7 @@ export function SummaryView({ paper, summary: s, onJump, onRegenerate, onAsk }: 
         <section className="mt-6">
           <SectionLabel>Abstract</SectionLabel>
           <div className="mt-2 border-l-2 border-primary pl-4">
-            <Markdown onJump={onJump} className="font-serif text-[1.05rem] leading-relaxed">
+            <Markdown maxPage={paper.pages} onJump={onJump} className="font-serif text-[1.05rem] leading-relaxed">
               {s.abstract}
             </Markdown>
           </div>
@@ -81,11 +81,11 @@ export function SummaryView({ paper, summary: s, onJump, onRegenerate, onAsk }: 
       )}
 
       <Section n={1} title="Problem Statement" pages={pages('problem_statement')} onJump={onJump}>
-        <Markdown onJump={onJump}>{s.problem_statement}</Markdown>
+        <Markdown maxPage={paper.pages} onJump={onJump}>{s.problem_statement}</Markdown>
       </Section>
 
       <Section n={2} title="Methodology" pages={pages('methodology')} onJump={onJump}>
-        <Markdown onJump={onJump}>{s.methodology}</Markdown>
+        <Markdown maxPage={paper.pages} onJump={onJump}>{s.methodology}</Markdown>
       </Section>
 
       <Section n={3} title="Key Results" pages={pages('key_results')} onJump={onJump}>
@@ -95,7 +95,7 @@ export function SummaryView({ paper, summary: s, onJump, onRegenerate, onAsk }: 
               <span className="w-6 shrink-0 text-right font-serif text-2xl leading-none font-semibold text-primary tabular-nums">
                 {i + 1}
               </span>
-              <Markdown onJump={onJump} className="min-w-0 flex-1 [&>p]:m-0">
+              <Markdown maxPage={paper.pages} onJump={onJump} className="min-w-0 flex-1 [&>p]:m-0">
                 {r}
               </Markdown>
             </li>
@@ -104,7 +104,7 @@ export function SummaryView({ paper, summary: s, onJump, onRegenerate, onAsk }: 
       </Section>
 
       <Section n={4} title="Conclusion" pages={pages('conclusion')} onJump={onJump}>
-        <Markdown onJump={onJump}>{s.conclusion}</Markdown>
+        <Markdown maxPage={paper.pages} onJump={onJump}>{s.conclusion}</Markdown>
       </Section>
 
       {s.suggested_questions?.length > 0 && (
