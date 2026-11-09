@@ -109,6 +109,21 @@ def test_chat_followup_and_not_covered(client, paper_pdf):
     assert "couldn't find" in answer
 
 
+def test_failed_regenerate_keeps_the_previous_summary_and_chat(client, paper_pdf, monkeypatch):
+    def fail(*args, **kwargs):
+        raise RuntimeError("provider is down")
+
+    pid = upload(client, paper_pdf).json()["id"]
+    before = wait_ready(client, pid)["summary"]
+    monkeypatch.setattr("app.service.generate_summary", fail)
+    client.post(f"/api/papers/{pid}/summary")
+    paper = wait_ready(client, pid)
+    assert paper["status"] == "error" and "provider is down" in paper["error"]
+    assert paper["summary"] == before
+    r = client.post(f"/api/papers/{pid}/chat", json={"question": "What is this about?", "history": []})
+    assert r.status_code == 200 and parse_sse(r.text)[-1][0] == "done"
+
+
 def test_regenerate_and_export(client, paper_pdf):
     pid = upload(client, paper_pdf).json()["id"]
     wait_ready(client, pid)
