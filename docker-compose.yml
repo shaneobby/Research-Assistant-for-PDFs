@@ -22,7 +22,8 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      # Localhost only: the app has no login. To share it, remove 127.0.0.1: and add your host to ALLOWED_HOSTS.
+      - "127.0.0.1:8080:80"
     depends_on:
       - backend
 
