@@ -1,6 +1,6 @@
 // Dependency-free check for the citation parser:  node --experimental-strip-types scripts/check-citations.mts
 import assert from 'node:assert/strict'
-import { linkCitations as l } from '../src/lib/markdown.ts'
+import { linkCitations as l, normalizeMath as m } from '../src/lib/markdown.ts'
 
 const chip = (n: number) => `[p. ${n}](#page-${n})`
 assert.equal(l('A [p. 4] b'), `A ${chip(4)} b`)
@@ -29,4 +29,14 @@ assert.equal(l('[p. 4] [p. 40]'), `${chip(4)} ${chip(40)}`)
 assert.equal(l('[p. 4] [p. 7] [p. 4]'), `${chip(4)} ${chip(7)} ${chip(4)}`)
 assert.equal(l('One [p. 4]. Two [p. 4].'), `One ${chip(4)}. Two ${chip(4)}.`)
 for (const untouched of ['step 6', '(n = 6)', '[6]', 'see `(p. 3)`', 'p. 6 bare', chip(3)]) assert.equal(l(untouched), untouched)
+// math delimiters
+assert.equal(m(String.raw`a \(x^2\) b`), 'a $$x^2$$ b')
+assert.equal(m('a $x^2$ b'), 'a $$x^2$$ b')
+assert.equal(m(String.raw`\[ x \]`), '$$\nx\n$$')
+assert.equal(m('  ' + String.raw`\[` + '\n  x\n  ' + String.raw`\]`), '  $$\n  x\n  $$')
+assert.equal(m(String.raw`see \[ x \] here`), 'see $$x$$ here')
+assert.equal(m(String.raw`\[ a \\[2pt] b \]`), String.raw`$$` + '\n' + String.raw`a \\[2pt] b` + '\n$$')
+for (const text of ['costs $5 and $10', '$5-$10', 'US$5 and US$6', '`$x$`', '```\n\\(x\\)\n```', '$$x$$', String.raw`\$5 and \$6`, '[p. 4](#page-4)']) {
+  assert.equal(m(text), text)
+}
 console.log('citation parser: ok')

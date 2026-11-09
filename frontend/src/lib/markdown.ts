@@ -59,6 +59,28 @@ export function linkCitations(md: string, maxPage?: number): string {
     .join('')
 }
 
+/**
+ * Rewrite the math delimiters models use into the `$$` form remark-math reads. `\( x \)` and `$x$` become inline math;
+ * `\[ x \]` becomes display math when it starts its line. A single `$` needs Pandoc's tight spacing, so prices such as
+ * "$5 and $10" stay text. Code spans and fenced blocks are left alone.
+ */
+export function normalizeMath(md: string): string {
+  return md
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((part, i) => {
+      if (i % 2 === 1) return part
+      return part
+        .replace(/(?<![\\$\w])\$(?=[^\s$])([^$\n]*?[^\s$\\])\$(?![\d$\w])/g, '$$$$$1$$$$')
+        .replace(/(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)/g, (_, body: string) => `$$${body.trim()}$$`)
+        .replace(/(?<!\\)\\\[([\s\S]+?)(?<!\\)\\\]/g, (_, body: string, at: number, text: string) => {
+          const lead = text.slice(text.lastIndexOf('\n', at) + 1, at)
+          if (lead.trim()) return `$$${body.trim().replace(/\s*\n\s*/g, ' ')}$$`
+          return `$$\n${lead}${body.trim()}\n${lead}$$`
+        })
+    })
+    .join('')
+}
+
 function expandPages(list: string): number[] {
   const out: number[] = []
   for (const piece of list.split(/[,;]/)) {

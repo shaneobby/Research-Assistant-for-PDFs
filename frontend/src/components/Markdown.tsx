@@ -1,8 +1,15 @@
 import { memo } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { type Components, type Options } from 'react-markdown'
+import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
-import { linkCitations } from '../lib/markdown'
+import remarkMath from 'remark-math'
+import 'katex/dist/katex.min.css'
+import { linkCitations, normalizeMath } from '../lib/markdown'
 import { PageChip } from './PageChip'
+
+// normalizeMath writes all inline math as $$x$$, so a lone "$" in the text can never start a formula.
+const remarkPlugins = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]] as Options['remarkPlugins']
+const rehypePlugins = [[rehypeKatex, { throwOnError: false, strict: false }]] as Options['rehypePlugins']
 
 interface Props {
   children: string
@@ -36,8 +43,8 @@ export const Markdown = memo(function Markdown({ children, onJump, className = '
   }
   return (
     <div className={`prose prose-paper max-w-none ${className}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['img']} components={components}>
-        {linkCitations(children, maxPage)}
+      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} disallowedElements={['img']} components={components}>
+        {normalizeMath(linkCitations(children, maxPage))}
       </ReactMarkdown>
     </div>
   )
