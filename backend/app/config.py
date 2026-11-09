@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     data_dir: Path = BACKEND_DIR / "data"
     max_upload_mb: int = 25
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # Accepted Host headers (port ignored); blocks DNS rebinding. Add your domain when deploying.
+    allowed_hosts: str = "localhost,127.0.0.1,[::1],backend"
 
     # RAG knobs
     chunk_tokens: int = 800
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
 
 @lru_cache
