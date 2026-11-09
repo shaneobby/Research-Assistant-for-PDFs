@@ -1,10 +1,13 @@
 import numpy as np
+import pytest
 
-from app.chunking import chunk_pages
+from app.chunking import chunk_pages, estimate_tokens
+from app.config import Settings
 from app.embeddings import HashEmbedder
 from app.llm.mock import MockProvider
 from app.pdf import PageText
 from app.retrieval import PaperIndex
+from app.service import PaperService
 from app.summarizer import extract_json, generate_summary
 
 
@@ -16,6 +19,84 @@ def test_chunking_keeps_pages_and_overlaps():
     assert all(c.pages == sorted(c.pages) for c in chunks)
     a, b = chunks[0].text.split(), chunks[1].text.split()
     assert a[-10:] == b[:10] or set(a[-50:]) & set(b[:50])  # overlap
+
+
+def test_two_column_page_keeps_column_order():
+    import pymupdf as fitz
+
+    from app.pdf import extract_pages
+
+    left = [f"left sentence number {i} continues the first column." for i in range(12)]
+    right = [f"right sentence number {i} continues the second column." for i in range(12)]
+    doc = fitz.open()
+    page = doc.new_page()
+    # Same font and origin, so both columns' lines share baselines: the case y-sorting interleaves.
+    page.insert_textbox(fitz.Rect(36, 50, 296, 700), "\n".join(left), fontsize=9)
+    page.insert_textbox(fitz.Rect(316, 50, 576, 700), "\n".join(right), fontsize=9)
+    data = doc.tobytes()
+    doc.close()
+
+    text = extract_pages(data)[0].text
+    assert [ln for ln in text.splitlines() if ln] == left + right
+
+
+HARD_PAGE = (
+    "Prose about attention mechanisms and backpropagation in neural networks. " * 80
+    + "\n\nTable 2 0.123 45.67 8.9e-10 1,234,567 (a) [17] p<0.05 " * 60
+    + "\n\nf(x)=Σ_{i=1}^{N} α_i·β_j/√(d_k) ∀x∈ℝ " * 80
+    + "\n\nhttps://example.org/" + "averyveryverylongunbrokenpathsegment" * 30
+)
+
+
+def _bge_tokenizer():
+    import glob
+    import os
+    import tempfile
+
+    from tokenizers import Tokenizer
+
+    pattern = "models--Qdrant--bge-small-en-v1.5-onnx-Q/snapshots/*/tokenizer.json"
+    found = glob.glob(os.path.join(tempfile.gettempdir(), "fastembed_cache", pattern))
+    if not found:
+        pytest.skip("bge-small tokenizer is not cached")
+    tokenizer = Tokenizer.from_file(found[0])
+    tokenizer.no_truncation()
+    return tokenizer
+
+
+def test_chunks_fit_the_embedder_window():
+    chunks = chunk_pages([PageText(1, HARD_PAGE)])  # default config
+    assert len(chunks) > 3
+    assert all(estimate_tokens(c.text) <= 512 for c in chunks)
+    tokenizer = _bge_tokenizer()
+    assert max(len(tokenizer.encode(c.text).ids) for c in chunks) <= 512  # counts [CLS] and [SEP]
+
+
+def test_stale_index_is_rebuilt_from_the_pdf(tmp_path, paper_pdf):
+    def service(**overrides):
+        settings = Settings(
+            _env_file=None, llm_provider="mock", embedding_backend="hash", data_dir=tmp_path, **overrides
+        )
+        return PaperService(settings, MockProvider("m"))
+
+    old = service(chunk_tokens=100, chunk_overlap_tokens=10)
+    pid = old.create("p.pdf", paper_pdf)["id"]
+    old.process(pid)
+    summary = old.store.get_paper(pid)["summary"]
+    signature = old.store.index_signature(pid)
+
+    old.reindex_stale()  # unchanged config: nothing is rebuilt
+    assert old.store.index_signature(pid) == signature
+
+    with old.store._conn() as c:  # simulate text stored by an older extractor
+        c.execute("UPDATE page_texts SET text = 'scrambled' WHERE paper_id = ?", (pid,))
+
+    new = service(chunk_tokens=60, chunk_overlap_tokens=5)
+    new.reindex_stale()
+    assert new.store.index_signature(pid) != signature
+    assert "scrambled" not in new.store.get_pages(pid)[0].text
+    assert any("Sparse Attention Routing" in c.text for c in new.store.load_chunks(pid)[0])
+    assert new.store.get_paper(pid)["summary"] == summary
 
 
 def test_hybrid_retrieval_finds_keyword_chunk():

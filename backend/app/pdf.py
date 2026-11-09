@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import pymupdf as fitz
 
 MIN_TEXT_CHARS = 200
+EXTRACTOR_VERSION = 2  # bump when extraction output changes, so stored papers get re-indexed
 
 
 class PdfError(ValueError):
@@ -28,7 +29,8 @@ def extract_pages(data: bytes) -> list[PageText]:
             raise PdfError("PDF is password-protected/encrypted.")
         if doc.page_count == 0:
             raise PdfError("PDF has no pages.")
-        pages = [PageText(i + 1, _clean(p.get_text("text", sort=True))) for i, p in enumerate(doc)]
+        # Keep PDF reading order: sort=True orders by y, which interleaves the columns of two-column papers.
+        pages = [PageText(i + 1, _clean(p.get_text("text"))) for i, p in enumerate(doc)]
     finally:
         doc.close()
     if sum(len(p.text) for p in pages) < MIN_TEXT_CHARS:

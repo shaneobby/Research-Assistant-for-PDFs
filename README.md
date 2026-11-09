@@ -99,6 +99,8 @@ Set these in `backend/.env` (or the environment).
 | `OPENAI_API_KEY` | – | for `openai` (any value for local servers) |
 | `OPENAI_BASE_URL` | – | OpenAI-compatible endpoints |
 | `EMBEDDING_BACKEND` | `fastembed` | `fastembed` or `hash` (no download) |
+| `CHUNK_TOKENS` | `450` | estimated embedder tokens per chunk; keep under the embedder's 512-token window |
+| `CHUNK_OVERLAP_TOKENS` | `60` | changing either chunk value or the embedding model re-indexes existing papers on the next start |
 | `DATA_DIR` | `./data` | PDFs and SQLite DB |
 | `MAX_UPLOAD_MB` | `25` | |
 

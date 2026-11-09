@@ -30,8 +30,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # RAG knobs
-    chunk_tokens: int = 800
-    chunk_overlap_tokens: int = 120
+    # Keep chunk_tokens under the embedder's window (bge-small truncates at 512). Changing either re-indexes on startup.
+    chunk_tokens: int = 450
+    chunk_overlap_tokens: int = 60
     top_k: int = 6
     # Summary pipeline sizing (lower both on small-quota providers, e.g. Groq free tier: 4000 / 3000)
     summary_single_pass_tokens: int = 24_000
