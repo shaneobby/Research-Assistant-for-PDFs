@@ -1,6 +1,7 @@
 """Chat over a paper: standalone-question rewrite -> hybrid retrieval -> grounded, cited answer."""
 from collections.abc import Iterator
 
+from .fencing import UNTRUSTED_TEXT_RULE, fence
 from .llm import LLMProvider
 from .retrieval import Hit
 from .textnorm import normalize_text
@@ -12,10 +13,11 @@ REWRITE_SYSTEM = (
     "Resolve pronouns and references using the conversation. Output only the rewritten question."
 )
 
-ANSWER_SYSTEM = """You are a helpful research assistant answering questions about ONE research paper.
+ANSWER_SYSTEM = f"""You are a helpful research assistant answering questions about ONE research paper.
+{UNTRUSTED_TEXT_RULE}
 Rules:
 - Answer ONLY from the numbered passages provided. Do not use outside knowledge about the paper.
-- Cite the page for every claim inline in EXACTLY this form: [p. 4] (ASCII square brackets, lowercase p, a period, one page per bracket; for several pages write [p. 4] [p. 7]). Never write (p. 4), (Table 1, p. 4), pp. 4-5 or page 4. Use the page given for the passage you used.
+- Cite the page for every claim inline in EXACTLY this form: [p. 4] (ASCII square brackets, lowercase p, a period, one page per bracket; for several pages write [p. 4] [p. 7]). Never write (p. 4), (Table 1, p. 4), pp. 4-5 or page 4. Use the page attribute of the passage you used.
 - If the passages do not contain the answer, say clearly that the paper doesn't seem to cover it
   (you may say what related information it does contain).
 - Be concise; use Markdown (short paragraphs, bullet lists, **bold** key terms) where it helps.
@@ -41,7 +43,7 @@ def rewrite_question(provider: LLMProvider, question: str, history: list[dict]) 
 
 
 def format_passages(hits: list[Hit]) -> str:
-    return "\n\n".join(f"[Passage {i} | p. {h.chunk.page}]\n{h.chunk.text}" for i, h in enumerate(hits, 1))
+    return "\n\n".join(fence(h.chunk.text, page=h.chunk.page, number=i) for i, h in enumerate(hits, 1))
 
 
 def answer_stream(

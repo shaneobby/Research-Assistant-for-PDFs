@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pydantic import ValidationError
 
 from .chunking import WORDS_PER_TOKEN, Chunk
+from .fencing import UNTRUSTED_TEXT_RULE, fence
 from .llm import LLMError, LLMProvider
 from .pdf import PageText
 from .schemas import Summary
@@ -46,7 +47,7 @@ SYSTEM = (
     "Write clearly for a technically literate reader who has not read the paper. "
     "Every section, especially the conclusion, must reflect only what the authors state: mention limitations "
     "or future work only if the authors wrote them, and never add your own opinions or extrapolations. "
-    "Use plain ASCII hyphens and spaces."
+    "Use plain ASCII hyphens and spaces. " + UNTRUSTED_TEXT_RULE
 )
 
 
@@ -54,8 +55,18 @@ def _tokens(text: str) -> int:
     return int(len(text.split()) / WORDS_PER_TOKEN)
 
 
-def _page_tagged(pages: list[PageText]) -> str:
-    return "\n\n".join(f"=== Page {p.page} ===\n{p.text}" for p in pages)
+def _page_tagged(pages: list[PageText], max_chars: int | None = None) -> str:
+    """Fenced page texts. `max_chars` limits the text itself, so a cut can't drop a closing tag."""
+    parts = []
+    left = max_chars
+    for p in pages:
+        text = p.text if left is None else p.text[:left]
+        parts.append(fence(text, page=p.page))
+        if left is not None:
+            left -= len(text)
+            if left <= 0:
+                break
+    return "\n\n".join(parts)
 
 
 HEADING_RE = re.compile(r"^((\d+(\.\d+)*\.?)|[IVX]+\.|[A-Z]\.)\s+[A-Z][\w\- ,:&]{2,60}$|^[A-Z][A-Z \-&]{3,40}$")
@@ -99,11 +110,11 @@ def _map_notes(provider: LLMProvider, chunks: list[Chunk], group_tokens: int = M
         groups[-1].append(ch)
     notes = []
     for i, group in enumerate(groups, 1):
-        body = "\n\n".join(f"[p. {c.page}] {c.text}" for c in group)
+        body = "\n\n".join(fence(c.text, page=c.page) for c in group)
         prompt = (
             f"This is part {i} of {len(groups)} of a research paper. Write dense bullet-point notes covering the "
             "problem, methods, datasets, experiments, numeric results and conclusions found in this part. "
-            "End every bullet with the page it came from, like [p. 7]. Skip references/bibliography.\n\n" + body
+            "End every bullet with the page attribute of its passage, like [p. 7]. Skip references/bibliography.\n\n" + body
         )
         notes.append(
             provider.complete(
@@ -132,12 +143,12 @@ def generate_summary(
     if _tokens(full) <= single_pass_tokens:
         material = "Full paper text (page-tagged):\n\n" + full
     else:
-        front = _page_tagged(pages[:2])[:FRONT_MATTER_CHARS]
+        front = _page_tagged(pages[:2], FRONT_MATTER_CHARS)
         notes = _map_notes(provider, chunks, map_group_tokens)
         material = (
             f"FRONT MATTER (first pages; use for title, authors, abstract):\n{front}\n\n"
-            f"SECTION OUTLINE:\n{section_outline(pages)}\n\n"
-            f"NOTES FROM THE WHOLE PAPER (page-cited):\n{notes}"
+            f"SECTION OUTLINE:\n{fence(section_outline(pages))}\n\n"
+            f"NOTES FROM THE WHOLE PAPER (page-cited):\n{fence(notes)}"
         )
     hint = f"Likely title (largest font on page 1): {title_hint}\n" if title_hint else ""
     prompt = (
