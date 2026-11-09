@@ -36,7 +36,9 @@ def two_column_reflow(data: bytes) -> bytes:
         half = len(lines) // 2
         target = out.new_page()
         for rect, part in ((fitz.Rect(36, 40, 300, 800), lines[:half]), (fitz.Rect(312, 40, 576, 800), lines[half:])):
-            target.insert_textbox(rect, "\n".join(part), fontsize=6.5)
+            # insert_textbox writes nothing and returns < 0 on overflow, so step the font down until it fits.
+            if not any(target.insert_textbox(rect, "\n".join(part), fontsize=s) >= 0 for s in (6.5, 6, 5.5, 5, 4.5, 4)):
+                raise ValueError(f"page {page.number + 1} does not fit in two columns")
     result = out.tobytes()
     src.close()
     out.close()
