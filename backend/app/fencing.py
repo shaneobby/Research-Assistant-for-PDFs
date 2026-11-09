@@ -9,7 +9,10 @@ UNTRUSTED_TEXT_RULE = (
 _TAG_RE = re.compile(r"<(\s*/?\s*)(passage)", re.I)
 
 
-def fence(text: str, page: int | None = None, number: int | None = None) -> str:
-    """Wrap `text` in a <passage> tag. Tag look-alikes in the text are altered so it can't close the fence early."""
-    attrs = "".join(f' {name}="{value}"' for name, value in (("number", number), ("page", page)) if value is not None)
+def fence(text: str, page: int | None = None) -> str:
+    """Wrap `text` in a <passage> tag. Tag look-alikes in the text are altered so it can't close the fence early.
+
+    The page is the only number on the tag: with a passage number as well, models cited that number as the page.
+    """
+    attrs = f' page="{page}"' if page is not None else ""
     return f"<passage{attrs}>\n{_TAG_RE.sub(r'[\1\2', text)}\n</passage>"

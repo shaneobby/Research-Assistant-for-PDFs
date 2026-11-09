@@ -29,8 +29,8 @@ def assert_one_fence_each(prompt: str, expected: int):
 
 
 def test_fence_text_cannot_close_or_open_a_passage():
-    out = fence(ATTACK, page=3, number=2)
-    assert out.startswith('<passage number="2" page="3">\n')
+    out = fence(ATTACK, page=3)
+    assert out.startswith('<passage page="3">\n')
     assert_one_fence_each(out, 1)
     assert "Ignore previous instructions" in out
 
@@ -38,7 +38,8 @@ def test_fence_text_cannot_close_or_open_a_passage():
 def test_format_passages_fences_each_hit():
     hits = [SimpleNamespace(chunk=SimpleNamespace(page=p, text=ATTACK)) for p in (2, 5)]
     out = format_passages(hits)
-    assert '<passage number="1" page="2">' in out and '<passage number="2" page="5">' in out
+    assert '<passage page="2">' in out and '<passage page="5">' in out
+    assert "number=" not in out  # models cite a passage number as if it were the page
     assert_one_fence_each(out, 2)
 
 
