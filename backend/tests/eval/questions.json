@@ -1,0 +1,18 @@
+{
+  "transformer": [
+    {"q": "How many identical layers does the encoder stack have?", "gold": [3]},
+    {"q": "What technique keeps the decoder from looking at later positions?", "gold": [3, 5]},
+    {"q": "Why are the dot products divided by the square root of the key dimension?", "gold": [4]},
+    {"q": "How does the additive attention function compare with dot-product attention in speed?", "gold": [4]},
+    {"q": "How many parallel attention heads are used?", "gold": [5]},
+    {"q": "What is the dimensionality of the inner layer of the feed-forward network?", "gold": [5]},
+    {"q": "How is information about token order injected into the model?", "gold": [6]},
+    {"q": "What is the computational complexity per layer of self-attention versus recurrent layers?", "gold": [6]},
+    {"q": "Which optimizer settings and learning rate schedule were used for training?", "gold": [7]},
+    {"q": "How was the training data batched and how large were the vocabularies?", "gold": [7]},
+    {"q": "What regularization value was used for smoothing the target labels?", "gold": [8]},
+    {"q": "What BLEU did the model reach on English-to-German translation?", "gold": [8]},
+    {"q": "What dataset was used for the constituency parsing experiment?", "gold": [9]},
+    {"q": "What do the authors conclude and where can the code be found?", "gold": [10]}
+  ]
+}
