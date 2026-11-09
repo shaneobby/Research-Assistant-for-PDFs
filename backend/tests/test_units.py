@@ -18,6 +18,25 @@ def test_chunking_keeps_pages_and_overlaps():
     assert a[-10:] == b[:10] or set(a[-50:]) & set(b[:50])  # overlap
 
 
+def test_two_column_page_keeps_column_order():
+    import pymupdf as fitz
+
+    from app.pdf import extract_pages
+
+    left = [f"left sentence number {i} continues the first column." for i in range(12)]
+    right = [f"right sentence number {i} continues the second column." for i in range(12)]
+    doc = fitz.open()
+    page = doc.new_page()
+    # Same font and origin, so both columns' lines share baselines: the case y-sorting interleaves.
+    page.insert_textbox(fitz.Rect(36, 50, 296, 700), "\n".join(left), fontsize=9)
+    page.insert_textbox(fitz.Rect(316, 50, 576, 700), "\n".join(right), fontsize=9)
+    data = doc.tobytes()
+    doc.close()
+
+    text = extract_pages(data)[0].text
+    assert [ln for ln in text.splitlines() if ln] == left + right
+
+
 def test_hybrid_retrieval_finds_keyword_chunk():
     from app.chunking import Chunk
 
