@@ -113,6 +113,7 @@ export function ChatPanel({ paper, onJump, ask }: Props) {
                 message={m}
                 question={i > 0 ? messages[i - 1].content : undefined}
                 live={streaming && i === messages.length - 1}
+                maxPage={paper.pages}
                 onJump={onJump}
                 onRetry={i === messages.length - 1 && !streaming ? retry : undefined}
               />
@@ -207,12 +208,14 @@ function Message({
   message: m,
   question,
   live,
+  maxPage,
   onJump,
   onRetry,
 }: {
   message: ChatMessage
   question?: string
   live: boolean
+  maxPage: number
   onJump: (p: number) => void
   onRetry?: () => void
 }) {
@@ -247,7 +250,12 @@ function Message({
           </p>
         ) : (
           m.content && (
-            <Markdown onJump={onJump} className={`text-[0.92rem] ${live ? 'streaming' : ''}`}>
+            <Markdown
+              onJump={onJump}
+              maxPage={maxPage}
+              sourcePages={m.sources ? [...new Set(m.sources.map((s) => s.page))] : undefined}
+              className={`text-[0.92rem] ${live ? 'streaming' : ''}`}
+            >
               {m.content}
             </Markdown>
           )
