@@ -70,7 +70,7 @@ LLM_MODEL=llama3.1
 upload ─► pdf.py (PyMuPDF, per-page text, reject non-PDF/encrypted/scanned)
        ─► db.py  (PDF on disk + SQLite: papers, page_texts, chunks+embeddings)
        ─► background: service.process()
-            chunking.py   ~800-token chunks, 120 overlap, page numbers kept
+            chunking.py   ~450-token chunks, 60 overlap, page numbers kept
             embeddings.py fastembed bge-small (fallback: hashing embedder)
             summarizer.py single pass (≤24k tokens) or map-reduce → strict JSON → pydantic
 chat   ─► rag.py  rewrite follow-up → standalone query (uses history)

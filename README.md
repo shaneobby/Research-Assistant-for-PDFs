@@ -145,7 +145,7 @@ More diagrams (repo structure, local runtime, deployment options): [docs/ARCHITE
 flowchart LR
   subgraph Ingest
     U[Upload PDF] --> X[Extract text per page<br/>PyMuPDF]
-    X --> C[Chunk ~800 tokens<br/>page-aware]
+    X --> C[Chunk ~450 tokens<br/>page-aware]
     C --> E[Embed bge-small<br/>+ BM25 index]
     E --> DB[(SQLite)]
     X --> S[Summarize<br/>single pass or map-reduce<br/>JSON + pydantic]
