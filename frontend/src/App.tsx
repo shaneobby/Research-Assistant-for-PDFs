@@ -268,7 +268,7 @@ function Workspace({
 
   const pdf = (
     <Suspense fallback={<div className="h-full bg-canvas" />}>
-      <PdfViewer url={api.pdfUrl(paper.id)} filename={paper.filename} jump={jump} />
+      <PdfViewer key={paper.id} url={api.pdfUrl(paper.id)} filename={paper.filename} jump={jump} />
     </Suspense>
   )
 

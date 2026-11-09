@@ -180,6 +180,7 @@ export function PdfViewer({ url, filename, jump }: Props) {
         ) : (
           <Document
             file={url}
+            suspense={false} // otherwise load errors skip onLoadError and take down the whole app
             onLoadSuccess={(doc) => {
               setNumPages(doc.numPages)
               setLoadError(null)
