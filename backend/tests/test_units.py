@@ -1,10 +1,13 @@
 import numpy as np
+import pytest
 
-from app.chunking import chunk_pages
+from app.chunking import chunk_pages, estimate_tokens
+from app.config import Settings
 from app.embeddings import HashEmbedder
 from app.llm.mock import MockProvider
 from app.pdf import PageText
 from app.retrieval import PaperIndex
+from app.service import PaperService
 from app.summarizer import extract_json, generate_summary
 
 
@@ -35,6 +38,38 @@ def test_two_column_page_keeps_column_order():
 
     text = extract_pages(data)[0].text
     assert [ln for ln in text.splitlines() if ln] == left + right
+
+
+HARD_PAGE = (
+    "Prose about attention mechanisms and backpropagation in neural networks. " * 80
+    + "\n\nTable 2 0.123 45.67 8.9e-10 1,234,567 (a) [17] p<0.05 " * 60
+    + "\n\nf(x)=Σ_{i=1}^{N} α_i·β_j/√(d_k) ∀x∈ℝ " * 80
+    + "\n\nhttps://example.org/" + "averyveryverylongunbrokenpathsegment" * 30
+)
+
+
+def _bge_tokenizer():
+    import glob
+    import os
+    import tempfile
+
+    from tokenizers import Tokenizer
+
+    pattern = "models--Qdrant--bge-small-en-v1.5-onnx-Q/snapshots/*/tokenizer.json"
+    found = glob.glob(os.path.join(tempfile.gettempdir(), "fastembed_cache", pattern))
+    if not found:
+        pytest.skip("bge-small tokenizer is not cached")
+    tokenizer = Tokenizer.from_file(found[0])
+    tokenizer.no_truncation()
+    return tokenizer
+
+
+def test_chunks_fit_the_embedder_window():
+    chunks = chunk_pages([PageText(1, HARD_PAGE)])  # default config
+    assert len(chunks) > 3
+    assert all(estimate_tokens(c.text) <= 512 for c in chunks)
+    tokenizer = _bge_tokenizer()
+    assert max(len(tokenizer.encode(c.text).ids) for c in chunks) <= 512  # counts [CLS] and [SEP]
 
 
 def test_hybrid_retrieval_finds_keyword_chunk():
