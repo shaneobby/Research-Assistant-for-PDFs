@@ -101,6 +101,7 @@ Set these in `backend/.env` (or the environment).
 | `EMBEDDING_BACKEND` | `fastembed` | `fastembed` or `hash` (no download) |
 | `CHUNK_TOKENS` | `450` | estimated embedder tokens per chunk; keep under the embedder's 512-token window |
 | `CHUNK_OVERLAP_TOKENS` | `60` | changing either chunk value or the embedding model re-indexes existing papers on the next start |
+| `TOP_K` | `6` | passages sent to the model per chat question (~450 tokens each); lower to `4` on small token quotas |
 | `DATA_DIR` | `./data` | PDFs and SQLite DB |
 | `MAX_UPLOAD_MB` | `25` | |
 | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | origins allowed to make browser requests |
