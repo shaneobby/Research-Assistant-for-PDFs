@@ -157,14 +157,20 @@ def generate_summary(
 
 
 def _fix_source_pages(summary: Summary, n_pages: int, page_lookup) -> Summary:
+    """Keep a cited page only if it exists and is among the top retrieval hits for that section's text.
+
+    If nothing survives (or the model gave no pages), fall back to the best retrieved pages.
+    """
     sp = summary.source_pages
     for field in ("problem_statement", "methodology", "key_results", "conclusion"):
         pages = sorted({p for p in getattr(sp, field) if 1 <= p <= n_pages})
-        if not pages and page_lookup:
+        if page_lookup:
             value = getattr(summary, field)
             text = " ".join(value) if isinstance(value, list) else value
             if text.strip():
-                pages = page_lookup(text)
+                hits = [p for p in page_lookup(text) if 1 <= p <= n_pages]
+                verified = [p for p in pages if p in hits]
+                pages = verified or sorted(hits[:2])
         setattr(sp, field, pages)
     summary.suggested_questions = summary.suggested_questions[:3]
     return summary

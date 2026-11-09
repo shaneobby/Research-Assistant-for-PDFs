@@ -55,6 +55,23 @@ def test_summary_retries_once_on_bad_json():
     assert np.all([p == [1] or p == [] for p in out["source_pages"].values()])
 
 
+def test_source_pages_verified_against_retrieval():
+    from app.schemas import Summary
+    from app.summarizer import _fix_source_pages
+
+    base = dict(title="t", abstract="a", problem_statement="prob", methodology="meth", key_results=["r"], conclusion="c",
+                keywords=[], suggested_questions=["a", "b", "c", "d"], authors=[])
+    sp = dict(problem_statement=[1, 99, 0, 3], methodology=[], key_results=[7], conclusion=[2])
+    s = Summary(**base, source_pages=sp)
+    lookup = lambda t: {"prob": [3, 1], "meth": [4, 5, 6], "r": [2], "c": [2, 8]}[t]  # noqa: E731
+    out = _fix_source_pages(s, 10, lookup).source_pages
+    assert out.problem_statement == [1, 3]  # 99 and 0 are out of range
+    assert out.methodology == [4, 5]  # nothing cited: best retrieved
+    assert out.key_results == [2]  # cited page 7 not retrieved: replaced
+    assert out.conclusion == [2]
+    assert len(s.suggested_questions) == 3
+
+
 def test_normalize_text_maps_odd_punctuation():
     from app.textnorm import normalize_deep, normalize_text
 

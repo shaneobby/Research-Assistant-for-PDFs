@@ -83,8 +83,8 @@ class PaperService:
         return index.search(query, self.embedder.embed_query(query), k or self.settings.top_k)
 
     def _pages_for(self, paper_id: str, text: str) -> list[int]:
-        hits = self.retrieve(paper_id, text[:1500], k=2)
-        return sorted({h.chunk.page for h in hits})
+        hits = self.retrieve(paper_id, text[:1500], k=5)
+        return list(dict.fromkeys(h.chunk.page for h in hits))  # best-ranked first
 
     def delete(self, paper_id: str) -> bool:
         self.indexes.drop(paper_id)
