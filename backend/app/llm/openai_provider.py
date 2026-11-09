@@ -9,6 +9,10 @@ from .base import LLMError, LLMProvider, Message
 
 log = logging.getLogger(__name__)
 
+CHAT_TIMEOUT = 60.0  # seconds per request (stream: per read)
+SUMMARY_TIMEOUT = 120.0
+TPM_WAIT_S = 20
+
 
 def _is_tpm_limit(exc: Exception) -> bool:
     text = str(exc).lower()
@@ -28,7 +32,7 @@ class OpenAIProvider(LLMProvider):
             raise LLMError("LLM_PROVIDER=openai but OPENAI_API_KEY is not set.")
         self._openai = openai
         # Local servers (Ollama) accept any key.
-        self._client = openai.OpenAI(api_key=api_key or "not-needed", base_url=base_url, max_retries=2)
+        self._client = openai.OpenAI(api_key=api_key or "not-needed", base_url=base_url, max_retries=1)
 
     def _msgs(self, system: str, messages: list[Message]) -> list[dict]:
         return [{"role": "system", "content": system}, *messages]
@@ -37,29 +41,43 @@ class OpenAIProvider(LLMProvider):
         for attempt in range(4):
             try:
                 resp = self._client.chat.completions.create(
-                    model=self.model, messages=self._msgs(system, messages), max_tokens=max_tokens, temperature=0.2
+                    model=self.model,
+                    messages=self._msgs(system, messages),
+                    max_tokens=max_tokens,
+                    temperature=0.2,
+                    timeout=SUMMARY_TIMEOUT,
                 )
                 break
             except self._openai.OpenAIError as exc:
                 # Free tiers cap tokens per minute: wait for the window to reset and retry.
                 if attempt < 3 and _is_tpm_limit(exc):
-                    log.warning("token-per-minute limit hit, waiting 20s (attempt %d)", attempt + 1)
-                    time.sleep(20)
+                    log.warning("token-per-minute limit hit, waiting %ds (attempt %d)", TPM_WAIT_S, attempt + 1)
+                    time.sleep(TPM_WAIT_S)
                     continue
                 raise LLMError(f"OpenAI API error: {exc}") from exc
         return resp.choices[0].message.content or ""
 
     def stream(self, system, messages: list[Message], *, max_tokens=1500, task=None, hints=None) -> Iterator[str]:
-        try:
-            stream = self._client.chat.completions.create(
-                model=self.model,
-                messages=self._msgs(system, messages),
-                max_tokens=max_tokens,
-                temperature=0.2,
-                stream=True,
-            )
-            for event in stream:
-                if event.choices and event.choices[0].delta.content:
-                    yield event.choices[0].delta.content
-        except self._openai.OpenAIError as exc:
-            raise LLMError(f"OpenAI API error: {exc}") from exc
+        # Retry a TPM limit only until the first token: afterwards a retry would repeat text.
+        for attempt in range(4):
+            started = False
+            try:
+                stream = self._client.chat.completions.create(
+                    model=self.model,
+                    messages=self._msgs(system, messages),
+                    max_tokens=max_tokens,
+                    temperature=0.2,
+                    stream=True,
+                    timeout=CHAT_TIMEOUT,
+                )
+                for event in stream:
+                    if event.choices and event.choices[0].delta.content:
+                        started = True
+                        yield event.choices[0].delta.content
+                return
+            except self._openai.OpenAIError as exc:
+                if not started and attempt < 3 and _is_tpm_limit(exc):
+                    log.warning("token-per-minute limit hit, waiting %ds (attempt %d)", TPM_WAIT_S, attempt + 1)
+                    time.sleep(TPM_WAIT_S)
+                    continue
+                raise LLMError(f"OpenAI API error: {exc}") from exc

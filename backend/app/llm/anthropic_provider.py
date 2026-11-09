@@ -3,6 +3,10 @@ from collections.abc import Iterator
 from .base import LLMError, LLMProvider, Message
 
 
+CHAT_TIMEOUT = 60.0  # seconds per request (stream: per read)
+SUMMARY_TIMEOUT = 120.0
+
+
 class AnthropicProvider(LLMProvider):
     name = "anthropic"
 
@@ -15,12 +19,16 @@ class AnthropicProvider(LLMProvider):
         if not api_key:
             raise LLMError("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set.")
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic(api_key=api_key, max_retries=2)
+        self._client = anthropic.Anthropic(api_key=api_key, max_retries=1)
 
     def complete(self, system, messages: list[Message], *, max_tokens=2000, task=None, hints=None) -> str:
         try:
             resp = self._client.messages.create(
-                model=self.model, max_tokens=max_tokens, system=system, messages=messages
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                timeout=SUMMARY_TIMEOUT,
             )
         except self._anthropic.APIError as exc:
             raise LLMError(f"Anthropic API error: {exc}") from exc
@@ -29,7 +37,11 @@ class AnthropicProvider(LLMProvider):
     def stream(self, system, messages: list[Message], *, max_tokens=1500, task=None, hints=None) -> Iterator[str]:
         try:
             with self._client.messages.stream(
-                model=self.model, max_tokens=max_tokens, system=system, messages=messages
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                timeout=CHAT_TIMEOUT,
             ) as s:
                 yield from s.text_stream
         except self._anthropic.APIError as exc:
