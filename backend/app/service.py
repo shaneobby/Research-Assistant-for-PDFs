@@ -3,12 +3,12 @@ import logging
 import threading
 import uuid
 
-from .chunking import chunk_pages
+from .chunking import CHUNKER_VERSION, chunk_pages
 from .config import Settings
 from .db import Store
 from .embeddings import get_embedder
 from .llm import LLMProvider
-from .pdf import extract_pages, guess_title
+from .pdf import EXTRACTOR_VERSION, PdfError, extract_pages, guess_title
 from .retrieval import Hit, IndexCache
 from .summarizer import generate_summary
 
@@ -42,13 +42,8 @@ class PaperService:
             self._busy.add(paper_id)
         try:
             self.store.set_status(paper_id, "processing")
+            self._ensure_index(paper_id)
             pages = self.store.get_pages(paper_id)
-            if not self.store.has_chunks(paper_id):
-                chunks = chunk_pages(pages, self.settings.chunk_tokens, self.settings.chunk_overlap_tokens)
-                vecs = self.embedder.embed_documents([c.text for c in chunks])
-                self.store.save_chunks(paper_id, chunks, vecs)
-                self.indexes.drop(paper_id)
-                log.info("indexed %s: %d chunks", paper_id, len(chunks))
             chunks, _ = self.store.load_chunks(paper_id)
             pdf_file = self.store.pdf_path(paper_id)
             title_hint = guess_title(pdf_file.read_bytes()) if pdf_file.exists() else ""
@@ -76,6 +71,51 @@ class PaperService:
         """Papers left in `processing` by a restart get picked up again."""
         for pid in self.store.ids_with_status("processing"):
             threading.Thread(target=self.process, args=(pid,), daemon=True).start()
+        threading.Thread(target=self.reindex_stale, daemon=True).start()
+
+    def reindex_stale(self) -> None:
+        """Rebuild ready papers whose index predates the current extraction, chunk or embedding config.
+
+        Summaries are kept: rebuilding them would cost LLM calls, and Regenerate is one click away.
+        """
+        for pid in self.store.ids_with_status("ready"):
+            with self._busy_lock:
+                if pid in self._busy:
+                    continue
+                self._busy.add(pid)
+            try:
+                self._ensure_index(pid)
+            except Exception:
+                log.exception("re-index failed for %s", pid)
+            finally:
+                with self._busy_lock:
+                    self._busy.discard(pid)
+
+    def _index_signature(self) -> str:
+        s = self.settings
+        return f"x{EXTRACTOR_VERSION}.c{CHUNKER_VERSION}.{s.chunk_tokens}.{s.chunk_overlap_tokens}.{self.embedder.name}"
+
+    def _ensure_index(self, paper_id: str) -> None:
+        signature = self._index_signature()
+        if self.store.index_signature(paper_id) == signature:
+            return
+        if self.store.has_chunks(paper_id):  # an older index: its page text may be from an older extractor too
+            self._refresh_pages(paper_id)
+        pages = self.store.get_pages(paper_id)
+        chunks = chunk_pages(pages, self.settings.chunk_tokens, self.settings.chunk_overlap_tokens)
+        vecs = self.embedder.embed_documents([c.text for c in chunks])
+        self.store.save_chunks(paper_id, chunks, vecs, signature)
+        self.indexes.drop(paper_id)
+        log.info("indexed %s: %d chunks", paper_id, len(chunks))
+
+    def _refresh_pages(self, paper_id: str) -> None:
+        pdf_file = self.store.pdf_path(paper_id)
+        if not pdf_file.exists():
+            return
+        try:
+            self.store.replace_pages(paper_id, extract_pages(pdf_file.read_bytes()))
+        except PdfError as exc:
+            log.warning("keeping stored page text for %s: %s", paper_id, exc)
 
     # ---- retrieval ----------------------------------------------------
     def retrieve(self, paper_id: str, query: str, k: int | None = None) -> list[Hit]:

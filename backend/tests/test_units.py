@@ -72,6 +72,33 @@ def test_chunks_fit_the_embedder_window():
     assert max(len(tokenizer.encode(c.text).ids) for c in chunks) <= 512  # counts [CLS] and [SEP]
 
 
+def test_stale_index_is_rebuilt_from_the_pdf(tmp_path, paper_pdf):
+    def service(**overrides):
+        settings = Settings(
+            _env_file=None, llm_provider="mock", embedding_backend="hash", data_dir=tmp_path, **overrides
+        )
+        return PaperService(settings, MockProvider("m"))
+
+    old = service(chunk_tokens=100, chunk_overlap_tokens=10)
+    pid = old.create("p.pdf", paper_pdf)["id"]
+    old.process(pid)
+    summary = old.store.get_paper(pid)["summary"]
+    signature = old.store.index_signature(pid)
+
+    old.reindex_stale()  # unchanged config: nothing is rebuilt
+    assert old.store.index_signature(pid) == signature
+
+    with old.store._conn() as c:  # simulate text stored by an older extractor
+        c.execute("UPDATE page_texts SET text = 'scrambled' WHERE paper_id = ?", (pid,))
+
+    new = service(chunk_tokens=60, chunk_overlap_tokens=5)
+    new.reindex_stale()
+    assert new.store.index_signature(pid) != signature
+    assert "scrambled" not in new.store.get_pages(pid)[0].text
+    assert any("Sparse Attention Routing" in c.text for c in new.store.load_chunks(pid)[0])
+    assert new.store.get_paper(pid)["summary"] == summary
+
+
 def test_hybrid_retrieval_finds_keyword_chunk():
     from app.chunking import Chunk
 

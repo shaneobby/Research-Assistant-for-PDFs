@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     embedding BLOB,
     PRIMARY KEY (paper_id, idx)
 );
+CREATE TABLE IF NOT EXISTS index_meta (
+    paper_id TEXT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+    signature TEXT NOT NULL
+);
 """
 
 
@@ -117,7 +121,19 @@ class Store:
             ).fetchall()
         return [PageText(r["page"], r["text"]) for r in rows]
 
-    def save_chunks(self, paper_id: str, chunks: list[Chunk], embeddings: np.ndarray):
+    def replace_pages(self, paper_id: str, pages: list[PageText]):
+        with self._lock, self._conn() as c:
+            c.executemany(
+                "UPDATE page_texts SET text = ? WHERE paper_id = ? AND page = ?",
+                [(p.text, paper_id, p.page) for p in pages],
+            )
+
+    def index_signature(self, paper_id: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute("SELECT signature FROM index_meta WHERE paper_id = ?", (paper_id,)).fetchone()
+        return row["signature"] if row else None
+
+    def save_chunks(self, paper_id: str, chunks: list[Chunk], embeddings: np.ndarray, signature: str):
         rows = [
             (paper_id, ch.idx, ch.page, json.dumps(ch.pages), ch.text, embeddings[i].astype(np.float32).tobytes())
             for i, ch in enumerate(chunks)
@@ -128,6 +144,7 @@ class Store:
                 "INSERT INTO chunks (paper_id, idx, page, pages_json, text, embedding) VALUES (?, ?, ?, ?, ?, ?)",
                 rows,
             )
+            c.execute("INSERT OR REPLACE INTO index_meta (paper_id, signature) VALUES (?, ?)", (paper_id, signature))
 
     def has_chunks(self, paper_id: str) -> bool:
         with self._conn() as c:
