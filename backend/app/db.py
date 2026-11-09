@@ -110,8 +110,10 @@ class Store:
     def delete_paper(self, paper_id: str) -> bool:
         with self._lock, self._conn() as c:
             cur = c.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
-        self.pdf_path(paper_id).unlink(missing_ok=True)
-        return cur.rowcount > 0
+        deleted = cur.rowcount > 0
+        if deleted:
+            self.pdf_path(paper_id).unlink(missing_ok=True)
+        return deleted
 
     # ---- pages / chunks ----------------------------------------------
     def get_pages(self, paper_id: str) -> list[PageText]:

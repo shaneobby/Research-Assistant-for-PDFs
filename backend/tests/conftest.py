@@ -60,5 +60,5 @@ def client(tmp_path):
         data_dir=tmp_path / "data",
         max_upload_mb=1,
     )
-    with TestClient(create_app(settings)) as c:
+    with TestClient(create_app(settings), base_url="http://localhost") as c:
         yield c

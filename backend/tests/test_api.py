@@ -176,3 +176,60 @@ def test_long_paper_map_reduce(client):
     paper = wait_ready(client, pid, timeout=60)
     assert paper["status"] == "ready", paper["error"]
     assert paper["summary"]["title"] == "Scaling Study of Routers"
+
+
+# ---- security quick wins (REVIEW ★3) ----------------------------------
+def test_traversal_id_is_404_and_decoy_survives(client):
+    data_dir = client.app.state.service.store.pdf_dir.parent
+    decoy = data_dir / "decoy.pdf"
+    decoy.write_bytes(b"%PDF-1.4 decoy")
+    for bad in ("..%5Cdecoy", "..%2Fdecoy", "not-a-uuid"):
+        assert client.delete(f"/api/papers/{bad}").status_code == 404
+        assert client.get(f"/api/papers/{bad}").status_code == 404
+    assert decoy.exists()
+
+
+def test_delete_unknown_uuid_keeps_other_files(client, paper_pdf):
+    pid = upload(client, paper_pdf).json()["id"]
+    wait_ready(client, pid)
+    assert client.delete("/api/papers/00000000-0000-4000-8000-000000000000").status_code == 404
+    assert client.get(f"/api/papers/{pid}/pdf").status_code == 200
+    assert client.delete(f"/api/papers/{pid}").status_code == 204
+    assert not client.app.state.service.store.pdf_path(pid).exists()
+
+
+def test_foreign_origin_write_is_blocked(client, paper_pdf):
+    r = client.post(
+        "/api/papers", files={"file": ("x.pdf", paper_pdf, "application/pdf")}, headers={"Origin": "https://evil.example"}
+    )
+    assert r.status_code == 403
+    assert client.get("/api/papers").json() == []
+
+
+def test_allowed_origins_still_work(client, paper_pdf):
+    # Vite dev proxy: Origin is the dev server, Host is rewritten to the backend.
+    r = client.post(
+        "/api/papers",
+        files={"file": ("x.pdf", paper_pdf, "application/pdf")},
+        headers={"Origin": "http://localhost:5173", "Host": "localhost:8000"},
+    )
+    assert r.status_code == 201
+    # Same-origin (nginx / Docker): Origin host equals Host.
+    r = client.delete(
+        f"/api/papers/{r.json()['id']}", headers={"Origin": "http://localhost:8080", "Host": "localhost:8080"}
+    )
+    assert r.status_code == 204
+
+
+def test_foreign_host_rejected(client):
+    assert client.get("/api/papers", headers={"Host": "attacker.rebind.example"}).status_code == 400
+    assert client.get("/api/health", headers={"Host": "127.0.0.1:8000"}).status_code == 200
+
+
+def test_export_markdown_non_latin_filename(client, paper_pdf):
+    pid = upload(client, paper_pdf, '论文 “x”.pdf').json()["id"]
+    wait_ready(client, pid)
+    r = client.get(f"/api/papers/{pid}/export.md")
+    assert r.status_code == 200
+    cd = r.headers["content-disposition"]
+    assert "filename*=UTF-8''" in cd and "%E8%AE%BA%E6%96%87" in cd

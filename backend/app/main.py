@@ -1,11 +1,14 @@
 """FastAPI app. Run: uvicorn app.main:app --reload --port 8000"""
 import json
 import logging
+import uuid
+from urllib.parse import quote, urlsplit
 from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
@@ -20,6 +23,45 @@ from .service import PaperService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
+
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+class OriginGuard:
+    """Reject state-changing requests from foreign web pages (CSRF).
+
+    A request is allowed if it has no Origin header (curl, server-to-server), the Origin is in
+    CORS_ORIGINS, or it is same-origin (the Origin's host equals the Host header, which
+    TrustedHostMiddleware has already vetted; this covers the nginx/Docker setup).
+    """
+
+    def __init__(self, app, allowed_origins: list[str]):
+        self.app = app
+        self.allowed = {o.rstrip("/").lower() for o in allowed_origins}
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] not in SAFE_METHODS:
+            headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+            origin = headers.get("origin")
+            if origin is not None and not self._ok(origin, headers.get("host", "")):
+                await JSONResponse({"detail": "Cross-origin request blocked."}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+    def _ok(self, origin: str, host: str) -> bool:
+        origin = origin.rstrip("/").lower()
+        return origin in self.allowed or urlsplit(origin).netloc == host.lower()
+
+
+def _check_id(paper_id: str) -> None:
+    """Paper ids are canonical UUID4 strings; anything else can't exist (and must never reach the filesystem)."""
+    try:
+        ok = str(uuid.UUID(paper_id)) == paper_id
+    except ValueError:
+        ok = False
+    if not ok:
+        raise HTTPException(404, "Paper not found.")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -42,6 +84,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(OriginGuard, allowed_origins=settings.cors_origin_list)
+    # Added last so it runs first: bad Host headers (DNS rebinding) are rejected before anything else.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError):
@@ -49,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse({"detail": msg or "Invalid request."}, status_code=422)
 
     def _get(paper_id: str) -> dict:
+        _check_id(paper_id)
         paper = service.store.get_paper(paper_id)
         if paper is None:
             raise HTTPException(404, "Paper not found.")
@@ -100,11 +146,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         paper = _get(paper_id)
         if not paper.get("summary"):
             raise HTTPException(409, "Summary is not ready yet.")
-        stem = paper["filename"].rsplit(".", 1)[0]
+        stem = "".join(c for c in paper["filename"].rsplit(".", 1)[0] if c.isprintable() and c not in '"\\/')
+        name = f"{stem or 'paper'}-summary.md"
+        ascii_name = name.encode("ascii", "replace").decode().replace("?", "_")
         return PlainTextResponse(
             summary_markdown(paper),
             media_type="text/markdown; charset=utf-8",
-            headers={"Content-Disposition": f'attachment; filename="{stem}-summary.md"'},
+            headers={"Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}"},
         )
 
     @app.post("/api/papers/{paper_id}/summary", response_model=Paper, status_code=202)
@@ -143,6 +191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.delete("/api/papers/{paper_id}", status_code=204)
     def delete_paper(paper_id: str):
+        _check_id(paper_id)
         if not service.delete(paper_id):
             raise HTTPException(404, "Paper not found.")
         return Response(status_code=204)
