@@ -170,3 +170,39 @@ def test_normalize_text_is_token_safe():
     text = "the 【p. 8】 self‑attention model"
     tokens = [text[i : i + 3] for i in range(0, len(text), 3)]  # arbitrary chunking
     assert "".join(normalize_text(t) for t in tokens) == normalize_text(text)
+
+
+def test_source_pages_checked_per_claim_and_prefer_named_section():
+    """A whole conclusion paraphrases the abstract, so full-text retrieval ranks p. 1-2 above the Conclusion on p. 9."""
+    from app.schemas import Summary
+    from app.summarizer import _fix_source_pages
+
+    conclusion = "A deep model reaches new state of the art. The authors release code and models for others."
+    results = ["Score of 80.5 on the benchmark.", "Accuracy of 86.7 on the inference task.", "F1 of 93.2 on question answering."]
+    base = dict(title="t", abstract="a", problem_statement="p" * 30, methodology="m" * 30, key_results=results,
+                conclusion=conclusion, keywords=[], suggested_questions=["a", "b", "c"], authors=[])
+    sp = dict(problem_statement=[1], methodology=[3], key_results=[7], conclusion=[1, 2])
+    pages_by_text = {
+        conclusion: [2, 1, 4],  # old behaviour: the paraphrase matches abstract and intro
+        "A deep model reaches new state of the art.": [1, 2, 9],
+        "The authors release code and models for others.": [9, 2],
+        "Score of 80.5 on the benchmark.": [6, 1],
+        "Accuracy of 86.7 on the inference task.": [6, 7],
+        "F1 of 93.2 on question answering.": [7, 8],
+    }
+    headings = [("1 Introduction", 1), ("4 Experiments", 5), ("5 Ablation Studies", 8), ("6 Conclusion", 9), ("References", 9)]
+    out = _fix_source_pages(Summary(**base, source_pages=sp), 16, lambda t: pages_by_text.get(t, []), headings).source_pages
+    assert out.conclusion == [9]
+    assert out.key_results == [6, 7]  # in the Experiments section; p. 1 and 8 are outside it
+    assert out.problem_statement == [1] or out.problem_statement == []
+
+
+def test_source_pages_drop_unsupported_citation_without_section():
+    from app.schemas import Summary
+    from app.summarizer import _fix_source_pages
+
+    base = dict(title="t", abstract="a", problem_statement="p" * 30, methodology="Trains the network with a new loss.",
+                key_results=["r" * 30], conclusion="c" * 30, keywords=[], suggested_questions=["a", "b", "c"], authors=[])
+    sp = dict(problem_statement=[], methodology=[8], key_results=[], conclusion=[])
+    out = _fix_source_pages(Summary(**base, source_pages=sp), 10, lambda t: [3, 4], []).source_pages
+    assert out.methodology == [3, 4]  # cited p. 8 never retrieved by any claim
